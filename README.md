@@ -1,5 +1,7 @@
 # sw-downloader
 
+> **Work in progress** — expect rough edges and breaking changes.
+
 Automatically downloads the latest **Stan Wyjątkowy** Saturday stream from YouTube before the channel edits the VOD.
 
 Runs as a Docker container with two independent cron jobs:
