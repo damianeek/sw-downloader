@@ -1,0 +1,103 @@
+/**
+ * Downloads a finished YouTube stream using yt-dlp.
+ * Returns the path of the downloaded file on success.
+ *
+ * @param {string} videoUrl
+ * @returns {Promise<string>} absolute path of the downloaded file
+ */
+
+import { execa } from 'execa';
+import path from 'path';
+import fs from 'fs';
+import { config } from './config.js';
+
+export async function downloadStream(videoUrl) {
+  if (!fs.existsSync(config.outputDir)) {
+    fs.mkdirSync(config.outputDir, { recursive: true });
+  }
+
+  const filenameTemplate = config.showYear
+    ? `%(uploader)s (${config.showYear}) - %(upload_date>%Y-%m-%d)s - %(title)s [%(id)s].%(ext)s`
+    : '%(uploader)s - %(title)s [%(id)s].%(ext)s';
+
+  const outputTemplate = path.join(config.outputDir, filenameTemplate);
+
+  const args = [
+    videoUrl,
+    '--output', outputTemplate,
+    '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+    '--merge-output-format', 'mp4',
+    '--no-part',
+    '--no-playlist',
+    '--newline',   // one progress line per line (easier to read in logs)
+  ];
+
+  if (config.ffmpegLocation) {
+    args.push('--ffmpeg-location', config.ffmpegLocation);
+  }
+
+
+  console.log(`[download] Starting: ${videoUrl}`);
+  console.log(`[download] Output dir: ${config.outputDir}`);
+
+  // Snapshot existing mp4s so we can identify the new file afterwards
+  const before = existingMp4s(config.outputDir);
+  const startedAt = Date.now();
+
+  // Full stdio inherit — progress and all output goes straight to the terminal
+  await execa(config.ytdlpBin, args, { stdio: 'inherit' });
+
+  // Find the file that appeared (or grew) since we started
+  const downloadedFile = findNewFile(config.outputDir, before, startedAt);
+
+  if (!downloadedFile) {
+    throw new Error('yt-dlp exited successfully but no new mp4 file was found in output dir.');
+  }
+
+  const stat = fs.statSync(downloadedFile);
+  if (stat.size === 0) {
+    throw new Error(`Downloaded file is empty: ${downloadedFile}`);
+  }
+
+  console.log(`[download] Done: ${downloadedFile} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
+  return downloadedFile;
+}
+
+function existingMp4s(dir) {
+  try {
+    return new Set(
+      fs.readdirSync(dir)
+        .filter((f) => f.endsWith('.mp4'))
+        .map((f) => path.join(dir, f))
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function findNewFile(dir, before, startedAt) {
+  try {
+    const files = fs.readdirSync(dir)
+      .filter((f) => f.endsWith('.mp4'))
+      .map((f) => path.join(dir, f))
+      .filter((f) => !before.has(f) || fs.statSync(f).mtimeMs >= startedAt);
+
+    if (files.length === 0) return null;
+    // Return the most recently modified one
+    return files.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0];
+  } catch {
+    return null;
+  }
+}
+
+// Run directly: node src/download.js <url>
+if (process.argv[1].endsWith('download.js')) {
+  const url = process.argv[2];
+  if (!url) {
+    console.error('Usage: node src/download.js <youtube-url>');
+    process.exit(1);
+  }
+  downloadStream(url)
+    .then((file) => console.log('Saved to:', file))
+    .catch((e) => { console.error(e.message); process.exit(1); });
+}
