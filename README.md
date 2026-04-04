@@ -35,26 +35,75 @@ ffmpeg, yt-dlp, Deno, and Chromium are all bundled in the image — nothing else
 
 ---
 
-## Quick start
+## Running
+
+### Linux — pre-built image from GHCR
+
+No need to clone or build anything. Pull and run directly:
 
 ```bash
+docker run -d \
+  --name sw-downloader \
+  --restart unless-stopped \
+  -v "/path/to/downloads:/downloads" \
+  ghcr.io/damianeek/sw-downloader:latest
+```
+
+Test immediately without waiting for Saturday:
+
+```bash
+docker run --rm \
+  -v "/path/to/downloads:/downloads" \
+  -e RUN_NOW=true \
+  ghcr.io/damianeek/sw-downloader:latest
+```
+
+Check logs:
+
+```bash
+docker logs -f sw-downloader
+```
+
+---
+
+### Unraid
+
+1. Go to **Docker → Add Container**
+2. Fill in the following:
+
+| Field | Value |
+|---|---|
+| Name | `sw-downloader` |
+| Repository | `ghcr.io/damianeek/sw-downloader:latest` |
+| Network Type | `bridge` |
+
+3. Add a **Path**:
+   - Container Path: `/downloads`
+   - Host Path: your media share, e.g. `/mnt/user/Media/`
+
+4. Add **Variables** (optional, these are the defaults):
+   - `TIMEZONE` = `Europe/Warsaw`
+   - `CHANNEL_HANDLE` = `stan_wyjatkowy`
+   - `MAX_AGE_HOURS` = `12`
+   - `MIN_DURATION_MINUTES` = `60`
+
+5. Click **Apply** — Unraid will pull the image and start the container automatically.
+
+To test immediately, add `RUN_NOW` = `true` as a variable before starting, then remove it after the first run.
+
+---
+
+### Build from source
+
+```bash
+git clone https://github.com/damianeek/sw-downloader.git
+cd sw-downloader
 docker build -t sw-downloader .
 
 docker run -d \
   --name sw-downloader \
   --restart unless-stopped \
   -v "/path/to/downloads:/downloads" \
-  sw-downloader
-```
-
-The container will wait silently until Saturday 20:05 Europe/Warsaw, then spring into action.
-
-### Test immediately (skips cron)
-
-```bash
-docker run --rm \
-  -v "/path/to/downloads:/downloads" \
-  -e RUN_NOW=true \
   sw-downloader
 ```
 
