@@ -1,0 +1,156 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>sw-downloader</Name>
+  <Repository>ghcr.io/damianeek/sw-downloader:latest</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/damianeek/sw-downloader</Support>
+  <Project>https://github.com/damianeek/sw-downloader</Project>
+  <Overview>Automatically downloads the latest Stan Wyjatkowy Saturday stream from YouTube before the channel edits the VOD. Uses Playwright to detect the stream and yt-dlp to download it once finished.</Overview>
+  <Category>Downloaders:</Category>
+  <Icon>https://www.youtube.com/favicon.ico</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+
+  <!-- ── Required paths ───────────────────────────────────────────────────── -->
+
+  <Config
+    Name="Downloads"
+    Target="/downloads"
+    Default="/mnt/user/media/"
+    Mode="rw"
+    Description="Where downloaded video files are saved."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false"/>
+
+  <Config
+    Name="Config"
+    Target="/config"
+    Default="/mnt/user/appdata/sw-downloader"
+    Mode="rw"
+    Description="Stores the state file (tracks what has been downloaded)."
+    Type="Path"
+    Display="always"
+    Required="true"
+    Mask="false"/>
+
+  <!-- ── Required variables ───────────────────────────────────────────────── -->
+
+  <Config
+    Name="Timezone"
+    Target="TIMEZONE"
+    Default="Europe/Warsaw"
+    Mode=""
+    Description="Timezone used for all cron schedules. See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false"/>
+
+  <Config
+    Name="Channel Handle"
+    Target="CHANNEL_HANDLE"
+    Default="stan_wyjatkowy"
+    Mode=""
+    Description="YouTube channel handle (without @)."
+    Type="Variable"
+    Display="always"
+    Required="true"
+    Mask="false"/>
+
+  <!-- ── Internal path wiring (hidden, derived from the path mappings above) -->
+
+  <Config
+    Name="Output Directory"
+    Target="OUTPUT_DIR"
+    Default="/downloads"
+    Mode=""
+    Description="Must match the container path set for Downloads above."
+    Type="Variable"
+    Display="advanced"
+    Required="true"
+    Mask="false"/>
+
+  <Config
+    Name="State File"
+    Target="STATE_FILE"
+    Default="/config/state.json"
+    Mode=""
+    Description="Must be inside the container path set for Config above."
+    Type="Variable"
+    Display="advanced"
+    Required="true"
+    Mask="false"/>
+
+  <!-- ── Optional tuning ──────────────────────────────────────────────────── -->
+
+  <Config
+    Name="Max Age (hours)"
+    Target="MAX_AGE_HOURS"
+    Default="12"
+    Mode=""
+    Description="How many hours after upload a video is still considered the unedited stream."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Min Duration (minutes)"
+    Target="MIN_DURATION_MINUTES"
+    Default="60"
+    Mode=""
+    Description="Minimum video length in minutes. Shorter videos are assumed to be already edited."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Show Year"
+    Target="SHOW_YEAR"
+    Default="2022"
+    Mode=""
+    Description="Show premiere year included in the output filename."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Find Cron"
+    Target="FIND_CRON"
+    Default="5 20 * * 6"
+    Mode=""
+    Description="Cron expression for when to check if a new stream is available. Default: Saturday 20:05."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Download Cron"
+    Target="DOWNLOAD_CRON"
+    Default="*/30 * * * *"
+    Mode=""
+    Description="Cron expression for how often to attempt the download. Default: every 30 minutes."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Run Now"
+    Target="RUN_NOW"
+    Default="false"
+    Mode=""
+    Description="Set to true to trigger the find+download pipeline immediately instead of waiting for cron. Set back to false after testing."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+</Container>
