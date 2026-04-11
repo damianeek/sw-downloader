@@ -47,12 +47,18 @@ export async function generateNfo(videoUrl, videoFile) {
     ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
     : '';
 
+  // Season = upload year; episode = day-of-year (unique number per episode within a season)
+  const season  = rawDate.length === 8 ? parseInt(rawDate.slice(0, 4), 10) : '';
+  const episode = aired ? dayOfYear(new Date(aired)) : '';
+
   // Best available thumbnail
   const thumb = info.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : '');
 
   const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <episodedetails>
   <title>${title}</title>
+  <season>${season}</season>
+  <episode>${episode}</episode>
   <plot>${description}</plot>
   <aired>${aired}</aired>
   <studio>${uploader}</studio>
@@ -63,6 +69,11 @@ export async function generateNfo(videoUrl, videoFile) {
 
   fs.writeFileSync(nfoFile, xml, 'utf8');
   console.log(`[nfo] Written: ${nfoFile}`);
+}
+
+function dayOfYear(date) {
+  const start = new Date(date.getFullYear(), 0, 0);
+  return Math.floor((date - start) / 86_400_000);
 }
 
 function escapeXml(str) {
