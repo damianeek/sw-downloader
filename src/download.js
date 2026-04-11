@@ -31,8 +31,10 @@ export async function downloadStream(videoUrl) {
   ];
 
   if (config.downloadSubtitles) {
+    // --write-auto-subs is needed to request auto-generated subs from YouTube.
+    // --embed-subs embeds them into the MP4 during the ffmpeg merge.
+    // Leftover subtitle files are deleted from outputDir after the merge.
     args.push(
-      '--write-subs',
       '--write-auto-subs',
       '--sub-langs', 'pl',
       '--embed-subs',
@@ -63,6 +65,11 @@ export async function downloadStream(videoUrl) {
     }
   }
 
+  // Remove any subtitle sidecar files left in outputDir — subs are embedded
+  if (config.downloadSubtitles) {
+    cleanSubtitleFiles(config.outputDir, startedAt);
+  }
+
   // Find the file that appeared (or grew) since we started
   const downloadedFile = findNewFile(config.outputDir, before, startedAt);
 
@@ -77,6 +84,23 @@ export async function downloadStream(videoUrl) {
 
   console.log(`[download] Done: ${downloadedFile} (${(stat.size / 1024 / 1024).toFixed(1)} MB)`);
   return downloadedFile;
+}
+
+const SUBTITLE_EXTS = ['.vtt', '.srt', '.ass', '.ssa', '.ttml'];
+
+function cleanSubtitleFiles(dir, since) {
+  try {
+    fs.readdirSync(dir)
+      .filter((f) => SUBTITLE_EXTS.some((ext) => f.endsWith(ext)))
+      .map((f) => path.join(dir, f))
+      .filter((f) => fs.statSync(f).mtimeMs >= since)
+      .forEach((f) => {
+        fs.rmSync(f, { force: true });
+        console.log(`[download] Removed subtitle sidecar: ${f}`);
+      });
+  } catch (e) {
+    console.warn(`[download] Could not clean subtitle files: ${e.message}`);
+  }
 }
 
 function existingMp4s(dir) {
