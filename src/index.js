@@ -1,18 +1,20 @@
 /**
- * Entry point — two independent cron jobs:
+ * Entry point — three cron jobs:
  *
- *  JOB 1 — "find"   (default: Sat 20:05 Europe/Warsaw)
- *    Playwright scrapes the channel, finds the newest video that is
- *    > MIN_DURATION_MINUTES long and uploaded within MAX_AGE_HOURS.
- *    Saves URL to state.json unless it was already downloaded.
+ *  JOB 1 — "find" initial  (default: Sat 20:05)
+ *    First trigger for the weekly stream.
  *
- *  JOB 2 — "download"  (default: every 30 min)
- *    If state.status === 'found':
- *      - asks yt-dlp whether the stream is still live or finished
- *      - if finished → downloads, marks state as 'done'
- *      - if still live → skips, retries next tick
+ *  JOB 2 — "find" retry    (default: every 5 min, Sat 20:00–23:59)
+ *    Keeps looking every 5 min in case the stream wasn't up at 20:05.
+ *    Skips immediately if the URL is already in state.
  *
- * Set RUN_NOW=true to trigger both jobs immediately (for testing).
+ *  JOB 3 — "download"      (default: every 30 min)
+ *    Once a URL is in state, checks if stream is finished and downloads.
+ *
+ * On startup: if it's Saturday and past 20:05, both jobs run immediately
+ * so a freshly deployed/restarted container catches up without waiting.
+ *
+ * Set RUN_NOW=true to force both jobs immediately regardless of day/time.
  */
 
 import cron from 'node-cron';
@@ -22,11 +24,19 @@ import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
 
-// ─── Job 1: find the stream URL ───────────────────────────────────────────────
+// ─── Job: find ────────────────────────────────────────────────────────────────
 
 async function jobFind() {
   const tag = '[find]';
   console.log(`${tag} ${new Date().toISOString()} — checking for new stream...`);
+
+  const state = readState();
+
+  // Don't disturb a download already in progress or completed
+  if (state.streamUrl && ['found', 'downloading', 'done'].includes(state.status)) {
+    console.log(`${tag} State is already "${state.status}" for ${state.streamUrl} — skipping.`);
+    return;
+  }
 
   const url = await findLatestStreamUrl();
   if (!url) {
@@ -48,10 +58,10 @@ async function jobFind() {
     error: null,
   });
 
-  console.log(`${tag} New URL saved — download job will pick it up on its next tick.`);
+  console.log(`${tag} URL saved — download job will pick it up on its next tick.`);
 }
 
-// ─── Job 2: download the stream once it's finished ───────────────────────────
+// ─── Job: download ────────────────────────────────────────────────────────────
 
 async function jobDownload() {
   const tag = '[download]';
@@ -74,7 +84,6 @@ async function jobDownload() {
     return;
   }
 
-  // 'found' or 'failed' (retry on failure)
   const streamStatus = await checkStreamStatus(state.streamUrl);
 
   if (streamStatus === 'live') {
@@ -87,7 +96,6 @@ async function jobDownload() {
     return;
   }
 
-  // streamStatus === 'finished'
   writeState({ status: 'downloading' });
 
   try {
@@ -100,20 +108,33 @@ async function jobDownload() {
   }
 }
 
+// ─── Startup catch-up: run immediately if it's Saturday past 20:05 ────────────
+
+function isInStreamWindow() {
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
+  const isSaturday = now.getDay() === 6;
+  const isPast2005 = now.getHours() > 20 || (now.getHours() === 20 && now.getMinutes() >= 5);
+  const isBefore2359 = now.getHours() <= 23;
+  return isSaturday && isPast2005 && isBefore2359;
+}
+
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
-if (config.runNow) {
-  console.log('RUN_NOW=true — running both jobs immediately.');
+if (config.runNow || isInStreamWindow()) {
+  const reason = config.runNow ? 'RUN_NOW=true' : 'Saturday stream window detected';
+  console.log(`${reason} — running both jobs immediately.`);
   jobFind().then(() => jobDownload()).catch(console.error);
 } else {
   console.log('=== sw-downloader started ===');
   console.log(`Find cron    : ${config.findCron} (${config.timezone})`);
+  console.log(`Retry cron   : ${config.findRetryCron} (${config.timezone})`);
   console.log(`Download cron: ${config.downloadCron} (${config.timezone})`);
   console.log(`Channel      : @${config.channelHandle}`);
   console.log(`Output dir   : ${config.outputDir}`);
-  console.log(`Max age      : ${config.maxAgeHours}h`);
-  console.log(`Min duration : ${config.minDurationMinutes}min`);
-
-  cron.schedule(config.findCron, jobFind, { timezone: config.timezone });
-  cron.schedule(config.downloadCron, jobDownload, { timezone: config.timezone });
+  console.log(`Max age      : ${config.maxAgeHours}h | Min duration: ${config.minDurationMinutes}min`);
 }
+
+// Always register cron jobs (they're no-ops outside their schedule)
+cron.schedule(config.findCron, jobFind, { timezone: config.timezone });
+cron.schedule(config.findRetryCron, jobFind, { timezone: config.timezone });
+cron.schedule(config.downloadCron, jobDownload, { timezone: config.timezone });

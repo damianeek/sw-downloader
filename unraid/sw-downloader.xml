@@ -13,7 +13,7 @@
   <Icon>https://www.youtube.com/favicon.ico</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
 
-  <!-- ── Required paths ───────────────────────────────────────────────────── -->
+  <!-- ── Paths ─────────────────────────────────────────────────────────────── -->
 
   <Config
     Name="Downloads"
@@ -31,7 +31,7 @@
     Target="/config"
     Default="/mnt/user/appdata/sw-downloader"
     Mode="rw"
-    Description="Stores the state file (tracks what has been downloaded)."
+    Description="Stores the state file and debug screenshots."
     Type="Path"
     Display="always"
     Required="true"
@@ -58,30 +58,6 @@
     Description="YouTube channel handle (without @)."
     Type="Variable"
     Display="always"
-    Required="true"
-    Mask="false"/>
-
-  <!-- ── Internal path wiring (hidden, derived from the path mappings above) -->
-
-  <Config
-    Name="Output Directory"
-    Target="OUTPUT_DIR"
-    Default="/downloads"
-    Mode=""
-    Description="Must match the container path set for Downloads above."
-    Type="Variable"
-    Display="advanced"
-    Required="true"
-    Mask="false"/>
-
-  <Config
-    Name="State File"
-    Target="STATE_FILE"
-    Default="/config/state.json"
-    Mode=""
-    Description="Must be inside the container path set for Config above."
-    Type="Variable"
-    Display="advanced"
     Required="true"
     Mask="false"/>
 
@@ -125,7 +101,18 @@
     Target="FIND_CRON"
     Default="5 20 * * 6"
     Mode=""
-    Description="Cron expression for when to check if a new stream is available. Default: Saturday 20:05."
+    Description="Cron expression for the initial stream check. Default: Saturday 20:05."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Find Retry Cron"
+    Target="FIND_RETRY_CRON"
+    Default="*/5 20-23 * * 6"
+    Mode=""
+    Description="Cron expression for retrying the stream check if not found yet. Default: every 5 min Saturday evening."
     Type="Variable"
     Display="advanced"
     Required="false"
@@ -147,7 +134,7 @@
     Target="RUN_NOW"
     Default="false"
     Mode=""
-    Description="Set to true to trigger the find+download pipeline immediately instead of waiting for cron. Set back to false after testing."
+    Description="Set to true to trigger the find+download pipeline immediately. Set back to false after testing."
     Type="Variable"
     Display="advanced"
     Required="false"

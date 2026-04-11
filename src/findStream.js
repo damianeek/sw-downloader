@@ -1,8 +1,9 @@
 /**
  * Uses Playwright to find a recent stream on the configured channel.
  * Checks the Home, Videos, and Live tabs in order.
- * Only returns a video that is younger than MAX_AGE_HOURS (default 20h),
- * because the channel edits the VOD after 12-24h (cuts most of the stream).
+ * Only returns a video younger than MAX_AGE_HOURS and longer than MIN_DURATION_MINUTES.
+ *
+ * A debug screenshot is saved to stateDir after each tab is scraped.
  *
  * @returns {Promise<string|null>} YouTube video URL or null if not found
  */
@@ -13,9 +14,9 @@ import path from 'path';
 import { config } from './config.js';
 
 const TABS = [
-  { name: 'Home',    path: ''        },
-  { name: 'Videos',  path: '/videos' },
-  { name: 'Live',    path: '/streams' },
+  { name: 'home',   path: ''         },
+  { name: 'videos', path: '/videos'  },
+  { name: 'live',   path: '/streams' },
 ];
 
 /**
@@ -46,43 +47,45 @@ function parseRelativeTime(text) {
 
 function isRecent(date) {
   if (!date) return false;
-  const ageHours = (Date.now() - date.getTime()) / 3600000;
-  return ageHours < config.maxAgeHours;
+  return (Date.now() - date.getTime()) / 3_600_000 < config.maxAgeHours;
 }
 
 /**
- * Parses a YouTube duration string into total minutes.
- * Accepts "H:MM:SS" or "MM:SS" (as shown on thumbnail overlays).
- * Returns null if unparseable.
+ * Parses "H:MM:SS" or "MM:SS" into total minutes. Returns null if unparseable.
  */
 function parseDurationMinutes(text) {
   if (!text) return null;
   const parts = text.trim().split(':').map(Number);
   if (parts.some(isNaN)) return null;
-  if (parts.length === 3) return parts[0] * 60 + parts[1] + parts[2] / 60; // H:MM:SS
-  if (parts.length === 2) return parts[0] + parts[1] / 60;                 // MM:SS
+  if (parts.length === 3) return parts[0] * 60 + parts[1] + parts[2] / 60;
+  if (parts.length === 2) return parts[0] + parts[1] / 60;
   return null;
 }
 
 function isLongEnough(minutes) {
-  if (minutes === null) return true; // can't determine — don't discard
+  if (minutes === null) return true; // unknown duration — don't discard
   return minutes >= config.minDurationMinutes;
 }
 
 /**
- * Scrapes one tab and returns all video candidates younger than maxAgeHours.
- * @returns {Promise<Array<{url: string, ageText: string, date: Date}>>}
+ * Scrapes one tab, saves a debug screenshot, and returns video candidates.
+ * @returns {Promise<Array<{url: string, ageText: string, date: Date, durationMinutes: number|null}>>}
  */
-async function scrapeTab(page, tabPath, tabName) {
-  const url = `https://www.youtube.com/@${config.channelHandle}${tabPath}?hl=en`;
-  console.log(`[find] Checking ${tabName} tab: ${url}`);
+async function scrapeTab(page, tab) {
+  const url = `https://www.youtube.com/@${config.channelHandle}${tab.path}?hl=en`;
+  console.log(`[find] Checking ${tab.name} tab: ${url}`);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
   await page.waitForTimeout(3000);
   await page.evaluate(() => window.scrollBy(0, 500));
   await page.waitForTimeout(1500);
 
-  // Collect all video renderers visible on this tab
+  // Save per-tab screenshot to stateDir for debugging
+  fs.mkdirSync(config.stateDir, { recursive: true });
+  const screenshotPath = path.join(config.stateDir, `debug-${tab.name}.png`);
+  await page.screenshot({ path: screenshotPath, fullPage: true });
+  console.log(`[find] Screenshot: ${screenshotPath}`);
+
   const renderers = await page.locator(
     'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer'
   ).all();
@@ -90,24 +93,21 @@ async function scrapeTab(page, tabPath, tabName) {
   const results = [];
 
   for (const renderer of renderers) {
-    // Get the video link
     const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
     const href = await linkEl.getAttribute('href').catch(() => null);
     if (!href || !href.includes('/watch')) continue;
 
     const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
 
-    // Get all metadata spans — YouTube puts time like "2 hours ago" in there
     const spans = await renderer.locator('#metadata-line span, #metadata span').allTextContents();
     const ageText = spans.find((t) => /ago/i.test(t)) || '';
-
     const date = parseRelativeTime(ageText);
+
     if (!isRecent(date)) {
       if (ageText) console.log(`[find]   Skipping (too old: "${ageText}"): ${videoUrl}`);
       continue;
     }
 
-    // Duration is shown on the thumbnail overlay, e.g. "3:42:15"
     const durationText = await renderer
       .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
       .first()
@@ -140,7 +140,7 @@ export async function findLatestStreamUrl() {
   const page = await context.newPage();
 
   try {
-    // Accept cookie consent on first navigation
+    // First navigation — handle cookie consent
     await page.goto(`https://www.youtube.com/@${config.channelHandle}?hl=en`, {
       waitUntil: 'load',
       timeout: 30000,
@@ -157,11 +157,11 @@ export async function findLatestStreamUrl() {
       }
     }
 
-    // Check all tabs, collect candidates
+    // Scrape all tabs, collect candidates
     const allCandidates = [];
     for (const tab of TABS) {
       try {
-        const candidates = await scrapeTab(page, tab.path, tab.name);
+        const candidates = await scrapeTab(page, tab);
         allCandidates.push(...candidates);
       } catch (err) {
         console.warn(`[find] Tab "${tab.name}" failed, skipping: ${err.message}`);
@@ -169,22 +169,16 @@ export async function findLatestStreamUrl() {
     }
 
     if (allCandidates.length === 0) {
-      const screenshotPath = path.join(config.outputDir, 'debug-screenshot.png');
-      fs.mkdirSync(config.outputDir, { recursive: true });
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      console.error(`[find] No recent stream found (< ${config.maxAgeHours}h). Screenshot: ${screenshotPath}`);
+      console.log(`[find] No recent stream found (< ${config.maxAgeHours}h, > ${config.minDurationMinutes}min).`);
       return null;
     }
 
     // Deduplicate by URL, pick the newest
     const seen = new Set();
-    const unique = allCandidates.filter(({ url }) => {
-      if (seen.has(url)) return false;
-      seen.add(url);
-      return true;
-    });
+    const unique = allCandidates
+      .filter(({ url }) => seen.has(url) ? false : seen.add(url))
+      .sort((a, b) => b.date - a.date);
 
-    unique.sort((a, b) => b.date - a.date);
     const best = unique[0];
     console.log(`[find] Selected: ${best.url} (${best.ageText})`);
     return best.url;

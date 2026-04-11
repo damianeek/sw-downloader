@@ -4,6 +4,9 @@
  */
 
 import 'dotenv/config';
+import path from 'path';
+
+const stateFile = process.env.STATE_FILE || '/downloads/state.json';
 
 export const config = {
   // YouTube channel handle (without @)
@@ -13,7 +16,10 @@ export const config = {
   outputDir: process.env.OUTPUT_DIR || '/downloads',
 
   // State file path — tracks stream URL and download status across cron runs
-  stateFile: process.env.STATE_FILE || '/downloads/state.json',
+  stateFile,
+
+  // Directory derived from stateFile — used for debug screenshots, etc.
+  stateDir: path.dirname(stateFile),
 
   // Path to ffmpeg binary (passed to yt-dlp via --ffmpeg-location)
   ffmpegLocation: process.env.FFMPEG_LOCATION || '',
@@ -21,9 +27,13 @@ export const config = {
   // Path to yt-dlp binary
   ytdlpBin: process.env.YTDLP_BIN || 'yt-dlp',
 
-  // Cron: when to check if the stream is live and grab the URL
+  // Cron: initial trigger — when to first look for the stream
   // Default: Saturday 20:05 Europe/Warsaw
   findCron: process.env.FIND_CRON || '5 20 * * 6',
+
+  // Cron: retry trigger — how often to keep looking if stream not found yet
+  // Default: every 5 min, Saturday 20:00–23:59
+  findRetryCron: process.env.FIND_RETRY_CRON || '*/5 20-23 * * 6',
 
   // Cron: how often to attempt downloading after stream is found
   // Default: every 30 minutes
@@ -41,7 +51,6 @@ export const config = {
   showYear: process.env.SHOW_YEAR || '2022',
 
   // Minimum video duration (in minutes) to be considered the full unedited stream.
-  // After editing, the VOD is cut to just the intro — default 60 minutes.
   minDurationMinutes: parseFloat(process.env.MIN_DURATION_MINUTES || '60'),
 
   // How old (in hours) a video can be and still be considered the unedited stream.
