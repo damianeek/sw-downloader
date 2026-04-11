@@ -1,6 +1,6 @@
 {
   "name": "sw-downloader",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Downloads Stan Wyjątkowy Saturday streams from YouTube",
   "type": "module",
   "main": "src/index.js",

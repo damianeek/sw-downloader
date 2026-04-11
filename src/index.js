@@ -18,7 +18,10 @@
  */
 
 import cron from 'node-cron';
+import { readFileSync } from 'fs';
 import { config } from './config.js';
+
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
 import { findLatestStreamUrl } from './findStream.js';
 import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
@@ -122,10 +125,10 @@ function isInStreamWindow() {
 
 if (config.runNow || isInStreamWindow()) {
   const reason = config.runNow ? 'RUN_NOW=true' : 'Saturday stream window detected';
-  console.log(`${reason} — running both jobs immediately.`);
+  console.log(`=== sw-downloader v${version} — ${reason}, running both jobs immediately ===`);
   jobFind().then(() => jobDownload()).catch(console.error);
 } else {
-  console.log('=== sw-downloader started ===');
+  console.log(`=== sw-downloader v${version} started ===`);
   console.log(`Find cron    : ${config.findCron} (${config.timezone})`);
   console.log(`Retry cron   : ${config.findRetryCron} (${config.timezone})`);
   console.log(`Download cron: ${config.downloadCron} (${config.timezone})`);

@@ -99,28 +99,41 @@ async function scrapeTab(page, tab) {
 
     const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
 
-    const spans = await renderer.locator('#metadata-line span, #metadata span').allTextContents();
-    const ageText = spans.find((t) => /ago/i.test(t)) || '';
-    const date = parseRelativeTime(ageText);
-
-    if (!isRecent(date)) {
-      if (ageText) console.log(`[find]   Skipping (too old: "${ageText}"): ${videoUrl}`);
-      continue;
-    }
-
-    const durationText = await renderer
+    // Check thumbnail overlay — could be a duration ("3:42:15") or "LIVE"
+    const overlayText = await renderer
       .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
       .first()
       .textContent()
       .catch(() => null);
-    const durationMinutes = parseDurationMinutes(durationText?.trim());
+    const overlayLabel = overlayText?.trim() || '';
 
-    if (!isLongEnough(durationMinutes)) {
-      console.log(`[find]   Skipping (too short: "${durationText?.trim()}", need >=${config.minDurationMinutes}min): ${videoUrl}`);
+    // Get all metadata text for debugging
+    const spans = await renderer.locator('#metadata-line span, #metadata span').allTextContents();
+    const allMeta = spans.map(s => s.trim()).filter(Boolean).join(' | ');
+
+    const isLive = /^live$/i.test(overlayLabel) || /watching/i.test(allMeta) || /^premiere/i.test(overlayLabel);
+    const ageText = spans.find((t) => /ago/i.test(t)) || '';
+
+    if (isLive) {
+      // Live streams have no duration or reliable age — always include them
+      console.log(`[find]   Found LIVE stream (meta: "${allMeta}"): ${videoUrl}`);
+      results.push({ url: videoUrl, ageText: 'LIVE', date: new Date(), durationMinutes: null });
       continue;
     }
 
-    const durationLabel = durationText?.trim() || 'duration unknown';
+    const date = parseRelativeTime(ageText);
+    if (!isRecent(date)) {
+      console.log(`[find]   Skipping (age: "${ageText || 'none'}", meta: "${allMeta}"): ${videoUrl}`);
+      continue;
+    }
+
+    const durationMinutes = parseDurationMinutes(overlayLabel);
+    if (!isLongEnough(durationMinutes)) {
+      console.log(`[find]   Skipping (too short: "${overlayLabel}", need >=${config.minDurationMinutes}min): ${videoUrl}`);
+      continue;
+    }
+
+    const durationLabel = overlayLabel || 'duration unknown';
     console.log(`[find]   Found candidate (${ageText}, ${durationLabel}): ${videoUrl}`);
     results.push({ url: videoUrl, ageText, date, durationMinutes });
   }
