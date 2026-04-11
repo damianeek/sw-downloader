@@ -6,10 +6,19 @@
 import 'dotenv/config';
 import path from 'path';
 
-// Prefix all console output with ISO timestamps
+// Prefix all console output with a local timestamp in the configured timezone
+const _tz = process.env.TIMEZONE || 'Europe/Warsaw';
 for (const method of ['log', 'warn', 'error']) {
   const orig = console[method].bind(console);
-  console[method] = (...args) => orig(`[${new Date().toISOString()}]`, ...args);
+  console[method] = (...args) => {
+    const ts = new Date().toLocaleString('en-US', {
+      timeZone: _tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    orig(`[${ts}]`, ...args);
+  };
 }
 
 const stateFile = process.env.STATE_FILE || '/downloads/state.json';

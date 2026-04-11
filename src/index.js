@@ -49,10 +49,15 @@ async function jobFind() {
 
   const state = readState();
 
-  // Don't disturb a download already in progress or completed
-  if (state.streamUrl && ['found', 'downloading', 'done'].includes(state.status)) {
-    console.log(`${tag} State is already "${state.status}" for ${state.streamUrl} — skipping.`);
-    return;
+  // If we already found (or downloaded) a stream today, don't search again
+  if (state.streamUrl && state.foundAt) {
+    const tz = config.timezone;
+    const foundDate = new Date(state.foundAt).toLocaleDateString('en-US', { timeZone: tz });
+    const today    = new Date().toLocaleDateString('en-US', { timeZone: tz });
+    if (foundDate === today) {
+      console.log(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
+      return;
+    }
   }
 
   const url = await findLatestStreamUrl();
