@@ -40,6 +40,7 @@ import { findLatestStreamUrl } from './findStream.js';
 import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
+import { generateNfo } from './nfo.js';
 
 // ─── Job: find ────────────────────────────────────────────────────────────────
 
@@ -96,37 +97,45 @@ async function jobDownload() {
     return;
   }
 
-  if (state.status === 'done') {
-    console.log(`${tag} Already downloaded: ${state.downloadedFile}`);
-    return;
-  }
-
   if (state.status === 'downloading') {
     console.log(`${tag} Download already in progress — skipping.`);
     return;
   }
 
-  const streamStatus = await checkStreamStatus(state.streamUrl);
+  // ── Step 1: download (skip if already done) ───────────────────────────────
+  let downloadedFile = state.downloadedFile;
 
-  if (streamStatus === 'live') {
-    console.log(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
-    return;
+  if (state.status !== 'done') {
+    const streamStatus = await checkStreamStatus(state.streamUrl);
+
+    if (streamStatus === 'live') {
+      console.log(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
+      return;
+    }
+
+    if (streamStatus === 'unknown') {
+      console.warn(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
+      return;
+    }
+
+    writeState({ status: 'downloading' });
+
+    try {
+      downloadedFile = await downloadStream(state.streamUrl);
+      writeState({ status: 'done', downloadedFile, completedAt: new Date().toISOString(), error: null });
+      console.log(`${tag} Download complete. Saved to: ${downloadedFile}`);
+    } catch (err) {
+      console.error(`${tag} Download failed: ${err.message}`);
+      writeState({ status: 'failed', error: err.message });
+      return;
+    }
+  } else {
+    console.log(`${tag} Already downloaded: ${downloadedFile}`);
   }
 
-  if (streamStatus === 'unknown') {
-    console.warn(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
-    return;
-  }
-
-  writeState({ status: 'downloading' });
-
-  try {
-    const file = await downloadStream(state.streamUrl);
-    writeState({ status: 'done', downloadedFile: file, completedAt: new Date().toISOString(), error: null });
-    console.log(`${tag} All done. Saved to: ${file}`);
-  } catch (err) {
-    console.error(`${tag} Download failed: ${err.message}`);
-    writeState({ status: 'failed', error: err.message });
+  // ── Step 2: NFO sidecar (skip if disabled or file already exists) ─────────
+  if (config.generateNfo && downloadedFile) {
+    await generateNfo(state.streamUrl, downloadedFile);
   }
 }
 

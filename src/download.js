@@ -12,40 +12,56 @@ import fs from 'fs';
 import { config } from './config.js';
 
 export async function downloadStream(videoUrl) {
-  if (!fs.existsSync(config.outputDir)) {
-    fs.mkdirSync(config.outputDir, { recursive: true });
-  }
+  fs.mkdirSync(config.outputDir, { recursive: true });
+  fs.mkdirSync(config.tempDir,   { recursive: true });
 
   const filenameTemplate = config.showYear
     ? `%(uploader)s (${config.showYear}) - %(upload_date>%Y-%m-%d)s - %(title)s [%(id)s].%(ext)s`
     : '%(uploader)s - %(title)s [%(id)s].%(ext)s';
 
-  const outputTemplate = path.join(config.outputDir, filenameTemplate);
-
   const args = [
     videoUrl,
-    '--output', outputTemplate,
+    '--paths',  `home:${config.outputDir}`,
+    '--paths',  `temp:${config.tempDir}`,
+    '--output', filenameTemplate,
     '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
     '--merge-output-format', 'mp4',
-    '--no-part',
     '--no-playlist',
-    '--newline',   // one progress line per line (easier to read in logs)
+    '--newline',
   ];
+
+  if (config.downloadSubtitles) {
+    args.push(
+      '--write-subs',
+      '--write-auto-subs',
+      '--sub-langs', 'pl',
+      '--embed-subs',
+    );
+  }
 
   if (config.ffmpegLocation) {
     args.push('--ffmpeg-location', config.ffmpegLocation);
   }
 
-
   console.log(`[download] Starting: ${videoUrl}`);
-  console.log(`[download] Output dir: ${config.outputDir}`);
+  console.log(`[download] Output: ${config.outputDir}  Temp: ${config.tempDir}`);
 
   // Snapshot existing mp4s so we can identify the new file afterwards
   const before = existingMp4s(config.outputDir);
   const startedAt = Date.now();
 
   // Full stdio inherit — progress and all output goes straight to the terminal
-  await execa(config.ytdlpBin, args, { stdio: 'inherit' });
+  try {
+    await execa(config.ytdlpBin, args, { stdio: 'inherit' });
+  } finally {
+    // Always clean up temp dir, even on failure
+    try {
+      fs.rmSync(config.tempDir, { recursive: true, force: true });
+      console.log(`[download] Temp dir cleaned: ${config.tempDir}`);
+    } catch (e) {
+      console.warn(`[download] Could not clean temp dir: ${e.message}`);
+    }
+  }
 
   // Find the file that appeared (or grew) since we started
   const downloadedFile = findNewFile(config.outputDir, before, startedAt);

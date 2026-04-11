@@ -42,6 +42,17 @@ export const config = {
   // Path to yt-dlp binary
   ytdlpBin: process.env.YTDLP_BIN || 'yt-dlp',
 
+  // Temp directory for yt-dlp partial/part files — merged file lands in outputDir
+  // Default is /tmp/sw-dl (RAM-backed tmpfs on Linux); override with TEMP_DIR env var
+  tempDir: process.env.TEMP_DIR || '/tmp/sw-dl',
+
+  // Whether to generate a Plex-compatible .nfo sidecar file after each download
+  generateNfo: process.env.GENERATE_NFO === 'true',
+
+  // Whether to download Polish subtitles and embed them as an internal track in the MP4.
+  // yt-dlp tries manual subs first, falls back to auto-generated.
+  downloadSubtitles: process.env.DOWNLOAD_SUBTITLES === 'true',
+
   // Cron: initial trigger — when to first look for the stream
   // Default: Saturday 20:05 Europe/Warsaw
   findCron: process.env.FIND_CRON || '5 20 * * 6',

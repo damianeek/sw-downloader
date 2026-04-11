@@ -64,6 +64,39 @@
   <!-- ── Optional tuning ──────────────────────────────────────────────────── -->
 
   <Config
+    Name="Temp Directory"
+    Target="TEMP_DIR"
+    Default="/tmp/sw-dl"
+    Mode=""
+    Description="Where yt-dlp stores partial files during download. Default /tmp/sw-dl is RAM-backed (tmpfs) — fast and auto-cleaned. Override with a path on a fast disk if RAM is limited."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Generate NFO"
+    Target="GENERATE_NFO"
+    Default="false"
+    Mode=""
+    Description="Set to true to generate a Plex-compatible .nfo sidecar file next to each downloaded video (title, description, aired date, thumbnail)."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Download Subtitles"
+    Target="DOWNLOAD_SUBTITLES"
+    Default="false"
+    Mode=""
+    Description="Set to true to download Polish subtitles and embed them as an internal track in the MP4. Tries manual subs first, falls back to auto-generated."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
     Name="Max Age (hours)"
     Target="MAX_AGE_HOURS"
     Default="12"
