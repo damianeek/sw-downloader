@@ -28,7 +28,7 @@ import { readState, writeState, isAlreadyDone } from './state.js';
 
 async function jobFind() {
   const tag = '[find]';
-  console.log(`${tag} ${new Date().toISOString()} — checking for new stream...`);
+  console.log(`${tag} Checking for new stream...`);
 
   const state = readState();
 
@@ -65,7 +65,7 @@ async function jobFind() {
 
 async function jobDownload() {
   const tag = '[download]';
-  console.log(`${tag} ${new Date().toISOString()} — checking state...`);
+  console.log(`${tag} Checking state...`);
 
   const state = readState();
 

@@ -6,6 +6,12 @@
 import 'dotenv/config';
 import path from 'path';
 
+// Prefix all console output with ISO timestamps
+for (const method of ['log', 'warn', 'error']) {
+  const orig = console[method].bind(console);
+  console[method] = (...args) => orig(`[${new Date().toISOString()}]`, ...args);
+}
+
 const stateFile = process.env.STATE_FILE || '/downloads/state.json';
 
 export const config = {
