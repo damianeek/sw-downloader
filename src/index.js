@@ -19,7 +19,21 @@
 
 import cron from 'node-cron';
 import { readFileSync } from 'fs';
+import { CronExpressionParser } from 'cron-parser';
 import { config } from './config.js';
+
+function nextCronTime(expression) {
+  try {
+    const next = CronExpressionParser.parse(expression, { tz: config.timezone }).next().toDate();
+    return next.toLocaleString('en-US', {
+      timeZone: config.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+    });
+  } catch {
+    return 'next tick';
+  }
+}
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
 import { findLatestStreamUrl } from './findStream.js';
@@ -43,7 +57,7 @@ async function jobFind() {
 
   const url = await findLatestStreamUrl();
   if (!url) {
-    console.log(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min).`);
+    console.log(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
     return;
   }
 
@@ -90,12 +104,12 @@ async function jobDownload() {
   const streamStatus = await checkStreamStatus(state.streamUrl);
 
   if (streamStatus === 'live') {
-    console.log(`${tag} Stream still live. Will retry next tick.`);
+    console.log(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
     return;
   }
 
   if (streamStatus === 'unknown') {
-    console.warn(`${tag} Could not determine stream status. Will retry next tick.`);
+    console.warn(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
     return;
   }
 

@@ -176,6 +176,10 @@ export async function findLatestStreamUrl() {
       try {
         const candidates = await scrapeTab(page, tab);
         allCandidates.push(...candidates);
+        if (candidates.some(c => c.ageText === 'LIVE')) {
+          console.log('[find] Live stream found — skipping remaining tabs.');
+          break;
+        }
       } catch (err) {
         console.warn(`[find] Tab "${tab.name}" failed, skipping: ${err.message}`);
       }

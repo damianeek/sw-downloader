@@ -10,9 +10,10 @@
     "download": "node src/download.js"
   },
   "dependencies": {
-    "playwright": "^1.52.0",
+    "cron-parser": "^5.5.0",
+    "dotenv": "^16.4.7",
     "execa": "^9.5.2",
     "node-cron": "^3.0.3",
-    "dotenv": "^16.4.7"
+    "playwright": "^1.52.0"
   }
 }
