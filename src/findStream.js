@@ -9,9 +9,26 @@
  */
 
 import { chromium } from 'playwright';
+import { execa } from 'execa';
 import fs from 'fs';
 import path from 'path';
 import { config } from './config.js';
+
+async function getVideoInfo(videoUrl) {
+  try {
+    const args = [videoUrl, '--dump-json', '--no-playlist', '--no-warnings'];
+    if (config.ffmpegLocation) args.push('--ffmpeg-location', config.ffmpegLocation);
+    const { stdout } = await execa(config.ytdlpBin, args);
+    const info = JSON.parse(stdout);
+    const d = info.upload_date; // YYYYMMDD
+    const uploadDate = d?.length === 8
+      ? new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`)
+      : null;
+    return { uploadDate, durationMinutes: info.duration ? info.duration / 60 : null };
+  } catch {
+    return null;
+  }
+}
 
 const TABS = [
   { name: 'home',   path: ''         },
@@ -43,6 +60,13 @@ function parseRelativeTime(text) {
   else return null;
 
   return new Date(Date.now() - ms);
+}
+
+
+function isSameDay(a, b) {
+  return a.getFullYear() === b.getFullYear()
+    && a.getMonth() === b.getMonth()
+    && a.getDate() === b.getDate();
 }
 
 function isRecent(date) {
@@ -152,7 +176,7 @@ async function scrapeTab(page, tab) {
   return results;
 }
 
-export async function findLatestStreamUrl() {
+async function launchPage() {
   const browser = await chromium.launch({ headless: config.headless });
   const context = await browser.newContext({
     userAgent:
@@ -162,6 +186,23 @@ export async function findLatestStreamUrl() {
     extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9' },
   });
   const page = await context.newPage();
+  return { browser, page };
+}
+
+async function acceptConsent(page) {
+  for (const label of ['Accept all', 'Reject all']) {
+    const btn = page.locator(`button:has-text("${label}")`);
+    if ((await btn.count()) > 0) {
+      console.log(`[find] Accepting consent: "${label}"`);
+      await btn.first().click();
+      await page.waitForTimeout(2000);
+      break;
+    }
+  }
+}
+
+export async function findLatestStreamUrl() {
+  const { browser, page } = await launchPage();
 
   try {
     // First navigation — handle cookie consent
@@ -170,16 +211,7 @@ export async function findLatestStreamUrl() {
       timeout: 30000,
     });
     await page.waitForTimeout(2000);
-
-    for (const label of ['Accept all', 'Reject all']) {
-      const btn = page.locator(`button:has-text("${label}")`);
-      if ((await btn.count()) > 0) {
-        console.log(`[find] Accepting consent: "${label}"`);
-        await btn.first().click();
-        await page.waitForTimeout(2000);
-        break;
-      }
-    }
+    await acceptConsent(page);
 
     // Scrape all tabs, collect candidates
     const allCandidates = [];
@@ -215,8 +247,86 @@ export async function findLatestStreamUrl() {
   }
 }
 
+/**
+ * Finds the longest video uploaded on a specific date from the Videos tab.
+ * Used when a download is marked invalid and the stream may have been edited.
+ *
+ * @param {Date} targetDate
+ * @returns {Promise<string|null>} YouTube video URL or null
+ */
+export async function findLongestVideoOnDate(targetDate) {
+  const tag = '[find-invalid]';
+  console.log(`${tag} Looking for longest video on ${targetDate.toDateString()} in Videos tab...`);
+
+  const { browser, page } = await launchPage();
+  let browserClosed = false;
+
+  try {
+    await page.goto(`https://www.youtube.com/@${config.channelHandle}?hl=en`, {
+      waitUntil: 'load',
+      timeout: 30000,
+    });
+    await page.waitForTimeout(2000);
+    await acceptConsent(page);
+
+    // Collect all video URLs + durations from the Videos tab
+    const videosUrl = `https://www.youtube.com/@${config.channelHandle}/videos?hl=en`;
+    await page.goto(videosUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000);
+    await page.evaluate(() => window.scrollBy(0, 500));
+    await page.waitForTimeout(1500);
+
+    const renderers = await page.locator(
+      'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer'
+    ).all();
+
+    const candidates = [];
+    for (const renderer of renderers) {
+      const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
+      const href = await linkEl.getAttribute('href').catch(() => null);
+      if (!href || !href.includes('/watch')) continue;
+      const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
+      const overlayText = await renderer
+        .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
+        .first().textContent().catch(() => null);
+      candidates.push({ url: videoUrl, durationMinutes: parseDurationMinutes(overlayText?.trim()) });
+    }
+
+    browserClosed = true;
+    await browser.close();
+
+    // Use yt-dlp to get exact upload date and duration for each candidate
+    let best = null;
+    for (const candidate of candidates) {
+      const info = await getVideoInfo(candidate.url);
+      if (!info?.uploadDate) { console.log(`${tag}   Could not fetch info: ${candidate.url}`); continue; }
+
+      if (!isSameDay(info.uploadDate, targetDate)) {
+        console.log(`${tag}   Skipping (${info.uploadDate.toDateString()}): ${candidate.url}`);
+        continue;
+      }
+
+      const mins = info.durationMinutes ?? candidate.durationMinutes;
+      console.log(`${tag}   Candidate (${info.uploadDate.toDateString()}, ${mins?.toFixed(0) ?? '?'} min): ${candidate.url}`);
+      if (!best || (mins !== null && (best.mins === null || mins > best.mins))) {
+        best = { url: candidate.url, mins };
+      }
+    }
+
+    if (!best) {
+      console.log(`${tag} No video found on ${targetDate.toDateString()}.`);
+      return null;
+    }
+
+    console.log(`${tag} Selected longest: ${best.url} (${best.mins?.toFixed(0) ?? '?'} min)`);
+    return best.url;
+  } finally {
+    if (!browserClosed) await browser.close();
+  }
+}
+
 // Run directly: node src/findStream.js
-if (process.argv[1].endsWith('findStream.js')) {
+if (process.argv[1]?.endsWith('findStream.js')) {
   findLatestStreamUrl()
     .then((url) => console.log(url ? `\nResult: ${url}` : '\nNo recent stream found.'))
     .catch(console.error);

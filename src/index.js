@@ -36,7 +36,7 @@ function nextCronTime(expression) {
 }
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
-import { findLatestStreamUrl } from './findStream.js';
+import { findLatestStreamUrl, findLongestVideoOnDate } from './findStream.js';
 import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
@@ -108,8 +108,13 @@ async function jobDownload() {
   let downloadedFile = state.downloadedFile;
 
   if (state.status === 'done' && state.valid === false) {
-    logEvent(`${tag} Marked invalid — re-downloading: ${state.streamUrl}`);
-    writeState({ status: 'found', downloadedFile: null, completedAt: null, error: null, valid: true });
+    logEvent(`${tag} Marked invalid — looking for longest video on release day...`);
+    const releaseDate = new Date(state.foundAt);
+    const replacement = await findLongestVideoOnDate(releaseDate);
+    const newUrl = replacement || state.streamUrl;
+    if (replacement) logEvent(`${tag} Replacement found: ${newUrl}`);
+    else logEvent(`${tag} No replacement found — re-downloading original: ${newUrl}`);
+    writeState({ streamUrl: newUrl, status: 'found', downloadedFile: null, completedAt: null, error: null, valid: true });
     downloadedFile = null;
   }
 
