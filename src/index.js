@@ -107,7 +107,7 @@ async function jobDownload() {
   // ── Step 1: download (skip if already done and valid) ────────────────────
   let downloadedFile = state.downloadedFile;
 
-  if (state.status === 'done' && state.valid === false) {
+  if (state.valid === false) {
     logEvent(`${tag} Marked invalid — looking for longest video on release day...`);
     const releaseDate = new Date(state.foundAt);
     const replacement = await findLongestVideoOnDate(releaseDate);
