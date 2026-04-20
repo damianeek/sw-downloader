@@ -5,11 +5,12 @@
  * Shape:
  * {
  *   streamUrl: string|null,
- *   foundAt: string|null,    // ISO datetime
+ *   foundAt: string|null,      // ISO datetime
  *   status: 'idle'|'found'|'downloading'|'done'|'failed',
  *   downloadedFile: string|null,
  *   completedAt: string|null,
- *   error: string|null
+ *   error: string|null,
+ *   valid: boolean             // set to false to trigger a re-download
  * }
  */
 
@@ -24,6 +25,7 @@ const DEFAULT_STATE = {
   downloadedFile: null,
   completedAt: null,
   error: null,
+  valid: true,
 };
 
 export function readState() {

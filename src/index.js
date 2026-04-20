@@ -41,12 +41,12 @@ import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
 import { generateNfo } from './nfo.js';
+import { logEvent, logIdle, logError } from './logger.js';
 
 // ─── Job: find ────────────────────────────────────────────────────────────────
 
 async function jobFind() {
   const tag = '[find]';
-  console.log(`${tag} Checking for new stream...`);
 
   const state = readState();
 
@@ -56,19 +56,21 @@ async function jobFind() {
     const foundDate = new Date(state.foundAt).toLocaleDateString('en-US', { timeZone: tz });
     const today    = new Date().toLocaleDateString('en-US', { timeZone: tz });
     if (foundDate === today) {
-      console.log(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
+      logIdle(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
       return;
     }
   }
 
+  console.log(`${tag} Checking for new stream...`);
+
   const url = await findLatestStreamUrl();
   if (!url) {
-    console.log(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
+    logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
     return;
   }
 
   if (isAlreadyDone(url)) {
-    console.log(`${tag} Already downloaded: ${url}`);
+    logIdle(`${tag} Already downloaded: ${url}`);
     return;
   }
 
@@ -79,21 +81,21 @@ async function jobFind() {
     downloadedFile: null,
     completedAt: null,
     error: null,
+    valid: true,
   });
 
-  console.log(`${tag} URL saved — download job will pick it up on its next tick.`);
+  logEvent(`${tag} Stream found: ${url}`);
 }
 
 // ─── Job: download ────────────────────────────────────────────────────────────
 
 async function jobDownload() {
   const tag = '[download]';
-  console.log(`${tag} Checking state...`);
 
   const state = readState();
 
   if (!state.streamUrl) {
-    console.log(`${tag} No stream URL in state yet.`);
+    logIdle(`${tag} No stream URL in state yet.`);
     return;
   }
 
@@ -102,35 +104,42 @@ async function jobDownload() {
     return;
   }
 
-  // ── Step 1: download (skip if already done) ───────────────────────────────
+  // ── Step 1: download (skip if already done and valid) ────────────────────
   let downloadedFile = state.downloadedFile;
 
-  if (state.status !== 'done') {
+  if (state.status === 'done' && state.valid === false) {
+    logEvent(`${tag} Marked invalid — re-downloading: ${state.streamUrl}`);
+    writeState({ status: 'found', downloadedFile: null, completedAt: null, error: null, valid: true });
+    downloadedFile = null;
+  }
+
+  if (state.status !== 'done' || downloadedFile === null) {
     const streamStatus = await checkStreamStatus(state.streamUrl);
 
     if (streamStatus === 'live') {
-      console.log(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
+      logIdle(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
       return;
     }
 
     if (streamStatus === 'unknown') {
-      console.warn(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
+      logIdle(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
       return;
     }
 
     writeState({ status: 'downloading' });
+    logEvent(`${tag} Starting download: ${state.streamUrl}`);
 
     try {
       downloadedFile = await downloadStream(state.streamUrl);
-      writeState({ status: 'done', downloadedFile, completedAt: new Date().toISOString(), error: null });
-      console.log(`${tag} Download complete. Saved to: ${downloadedFile}`);
+      writeState({ status: 'done', downloadedFile, completedAt: new Date().toISOString(), error: null, valid: true });
+      logEvent(`${tag} Download complete: ${downloadedFile}`);
     } catch (err) {
-      console.error(`${tag} Download failed: ${err.message}`);
+      logError(`${tag} Download failed: ${err.message}`);
       writeState({ status: 'failed', error: err.message });
       return;
     }
   } else {
-    console.log(`${tag} Already downloaded: ${downloadedFile}`);
+    logIdle(`${tag} Already downloaded: ${downloadedFile}`);
   }
 
   // ── Step 2: NFO sidecar (skip if disabled or file already exists) ─────────

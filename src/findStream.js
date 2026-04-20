@@ -99,6 +99,17 @@ async function scrapeTab(page, tab) {
 
     const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
 
+    // Skip videos from other channels (home tab shows recommendations)
+    const channelHref = await renderer
+      .locator('a.yt-formatted-string[href], #channel-name a')
+      .first()
+      .getAttribute('href')
+      .catch(() => null);
+    if (channelHref && !channelHref.toLowerCase().includes(config.channelHandle.toLowerCase())) {
+      console.log(`[find]   Skipping (different channel: "${channelHref}"): ${videoUrl}`);
+      continue;
+    }
+
     // Check thumbnail overlay — could be a duration ("3:42:15") or "LIVE"
     const overlayText = await renderer
       .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
