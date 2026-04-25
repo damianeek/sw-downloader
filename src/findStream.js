@@ -115,11 +115,19 @@ async function scrapeTab(page, tab) {
   ).all();
 
   const results = [];
+  let analyzed = 0;
 
   for (const renderer of renderers) {
+    if (analyzed >= 6) {
+      console.log(`[find]   Reached limit of 6 episodes analyzed for ${tab.name} tab.`);
+      break;
+    }
+
     const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
     const href = await linkEl.getAttribute('href').catch(() => null);
     if (!href || !href.includes('/watch')) continue;
+    
+    analyzed++;
 
     const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
 
@@ -146,14 +154,16 @@ async function scrapeTab(page, tab) {
     const spans = await renderer.locator('#metadata-line span, #metadata span').allTextContents();
     const allMeta = spans.map(s => s.trim()).filter(Boolean).join(' | ');
 
-    const isLive = /^live$/i.test(overlayLabel) || /watching/i.test(allMeta) || /^premiere/i.test(overlayLabel);
+    const isLive = /^live$/i.test(overlayLabel) || /^premiere/i.test(overlayLabel) || /watching|waiting/i.test(allMeta);
     const ageText = spans.find((t) => /ago/i.test(t)) || '';
 
     if (isLive) {
+      const viewCountMatch = allMeta.match(/([\d.,KMB]+\s+(?:watching|waiting))/i);
+      const viewCountText = viewCountMatch ? viewCountMatch[1] : 'unknown viewers';
       // Live streams have no duration or reliable age — always include them
-      console.log(`[find]   Found LIVE stream (meta: "${allMeta}"): ${videoUrl}`);
+      console.log(`[find]   Found LIVE/PREMIERE stream (${viewCountText}, meta: "${allMeta}"): ${videoUrl}`);
       results.push({ url: videoUrl, ageText: 'LIVE', date: new Date(), durationMinutes: null });
-      continue;
+      break; // Stop looking for episodes once it finds the live one
     }
 
     const date = parseRelativeTime(ageText);
@@ -281,10 +291,17 @@ export async function findLongestVideoOnDate(targetDate) {
     ).all();
 
     const candidates = [];
+    let analyzed = 0;
     for (const renderer of renderers) {
+      if (analyzed >= 6) {
+        console.log(`${tag}   Reached limit of 6 episodes analyzed.`);
+        break;
+      }
       const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
       const href = await linkEl.getAttribute('href').catch(() => null);
       if (!href || !href.includes('/watch')) continue;
+      
+      analyzed++;
       const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
       const overlayText = await renderer
         .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
