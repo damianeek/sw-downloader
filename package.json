@@ -1,13 +1,14 @@
 {
   "name": "sw-downloader",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Downloads Stan Wyjątkowy Saturday streams from YouTube",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "find": "node src/findStream.js",
-    "download": "node src/download.js"
+    "download": "node src/download.js",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "dependencies": {
     "cron-parser": "^5.5.0",
@@ -15,5 +16,9 @@
     "execa": "^9.5.2",
     "node-cron": "^3.0.3",
     "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^30.3.0"
   }
 }
