@@ -84,4 +84,7 @@ export const config = {
 
   // Set to 'false' to show the browser window (for debugging)
   headless: process.env.HEADLESS !== 'false',
+
+  // Base URL for YouTube (used for mocking during tests)
+  youtubeBaseUrl: process.env.YOUTUBE_BASE_URL || 'https://www.youtube.com',
 };

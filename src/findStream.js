@@ -31,9 +31,8 @@ async function getVideoInfo(videoUrl) {
 }
 
 const TABS = [
-  { name: 'home',   path: ''         },
-  { name: 'videos', path: '/videos'  },
-  { name: 'live',   path: '/streams' },
+  { name: 'home',   path: ''        },
+  { name: 'videos', path: '/videos' },
 ];
 
 /**
@@ -96,13 +95,16 @@ function isLongEnough(minutes) {
  * @returns {Promise<Array<{url: string, ageText: string, date: Date, durationMinutes: number|null}>>}
  */
 async function scrapeTab(page, tab) {
-  const url = `https://www.youtube.com/@${config.channelHandle}${tab.path}?hl=en`;
+  const url = `${config.youtubeBaseUrl}/@${config.channelHandle}${tab.path}?hl=en`;
   console.log(`[find] Checking ${tab.name} tab: ${url}`);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await page.waitForTimeout(3000);
+  const isLocalServer = !config.youtubeBaseUrl.includes('youtube.com');
+  const loadDelay = isLocalServer ? 200 : 3000;
+  const scrollDelay = isLocalServer ? 100 : 1500;
+  await page.waitForTimeout(loadDelay);
   await page.evaluate(() => window.scrollBy(0, 500));
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(scrollDelay);
 
   // Save per-tab screenshot to stateDir for debugging
   fs.mkdirSync(config.stateDir, { recursive: true });
@@ -110,48 +112,49 @@ async function scrapeTab(page, tab) {
   await page.screenshot({ path: screenshotPath, fullPage: true });
   console.log(`[find] Screenshot: ${screenshotPath}`);
 
+  await page.waitForSelector(
+    'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer',
+    { timeout: 10000 }
+  ).catch(() => null);
+
   const renderers = await page.locator(
     'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer'
   ).all();
 
   const results = [];
-  let analyzed = 0;
 
   for (const renderer of renderers) {
-    if (analyzed >= 6) {
-      console.log(`[find]   Reached limit of 6 episodes analyzed for ${tab.name} tab.`);
-      break;
-    }
-
-    const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
-    const href = await linkEl.getAttribute('href').catch(() => null);
+    const linkEl = renderer.locator('a[href*="/watch"]').first();
+    const href = await linkEl.getAttribute('href', { timeout: 2000 }).catch(() => null);
     if (!href || !href.includes('/watch')) continue;
-    
-    analyzed++;
 
-    const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
+    const videoUrl = href.startsWith('http') ? href : `${config.youtubeBaseUrl}${href}`;
 
-    // Skip videos from other channels (home tab shows recommendations)
-    const channelHref = await renderer
-      .locator('a.yt-formatted-string[href], #channel-name a')
-      .first()
-      .getAttribute('href')
-      .catch(() => null);
-    if (channelHref && !channelHref.toLowerCase().includes(config.channelHandle.toLowerCase())) {
-      console.log(`[find]   Skipping (different channel: "${channelHref}"): ${videoUrl}`);
-      continue;
+    // Skip videos from other channels — only needed on home tab where
+    // YouTube mixes in recommendations; videos/streams tabs are channel-only
+    if (tab.name === 'home') {
+      const channelHref = await renderer
+        .locator('a.yt-formatted-string[href], #channel-name a, .ytLockupMetadataViewModelChannelName a, yt-content-metadata-view-model a')
+        .first()
+        .getAttribute('href', { timeout: 2000 })
+        .catch(() => null);
+      if (channelHref && !channelHref.toLowerCase().includes(config.channelHandle.toLowerCase())) {
+        console.log(`[find]   Skipping (different channel: "${channelHref}"): ${videoUrl}`);
+        continue;
+      }
     }
 
-    // Check thumbnail overlay — could be a duration ("3:42:15") or "LIVE"
+    // Check thumbnail overlay — could be a duration ("3:42:15") or "LIVE"/"PREMIERE"
+    // Supports both old (ytd-thumbnail-overlay-time-status-renderer) and new (.ytBadgeShapeText) YouTube layout
     const overlayText = await renderer
-      .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
+      .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer, .ytBadgeShapeText')
       .first()
-      .textContent()
+      .textContent({ timeout: 5000 })
       .catch(() => null);
     const overlayLabel = overlayText?.trim() || '';
 
-    // Get all metadata text for debugging
-    const spans = await renderer.locator('#metadata-line span, #metadata span').allTextContents();
+    // Get all metadata text (views, age) — supports old (#metadata-line) and new (.ytContentMetadataViewModelMetadataText) layout
+    const spans = await renderer.locator('#metadata-line span, #metadata span, .ytContentMetadataViewModelMetadataText').allTextContents({ timeout: 5000 }).catch(() => []);
     const allMeta = spans.map(s => s.trim()).filter(Boolean).join(' | ');
 
     const isLive = /^live$/i.test(overlayLabel) || /^premiere/i.test(overlayLabel) || /watching|waiting/i.test(allMeta);
@@ -216,11 +219,12 @@ export async function findLatestStreamUrl() {
 
   try {
     // First navigation — handle cookie consent
-    await page.goto(`https://www.youtube.com/@${config.channelHandle}?hl=en`, {
+    await page.goto(`${config.youtubeBaseUrl}/@${config.channelHandle}?hl=en`, {
       waitUntil: 'load',
       timeout: 30000,
     });
-    await page.waitForTimeout(2000);
+    const isLocal = !config.youtubeBaseUrl.includes('youtube.com');
+    await page.waitForTimeout(isLocal ? 200 : 2000);
     await acceptConsent(page);
 
     // Scrape all tabs, collect candidates
@@ -272,19 +276,20 @@ export async function findLongestVideoOnDate(targetDate) {
   let browserClosed = false;
 
   try {
-    await page.goto(`https://www.youtube.com/@${config.channelHandle}?hl=en`, {
+    await page.goto(`${config.youtubeBaseUrl}/@${config.channelHandle}?hl=en`, {
       waitUntil: 'load',
       timeout: 30000,
     });
-    await page.waitForTimeout(2000);
+    const isLocal = !config.youtubeBaseUrl.includes('youtube.com');
+    await page.waitForTimeout(isLocal ? 200 : 2000);
     await acceptConsent(page);
 
     // Collect all video URLs + durations from the Videos tab
-    const videosUrl = `https://www.youtube.com/@${config.channelHandle}/videos?hl=en`;
+    const videosUrl = `${config.youtubeBaseUrl}/@${config.channelHandle}/videos?hl=en`;
     await page.goto(videosUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(isLocal ? 200 : 3000);
     await page.evaluate(() => window.scrollBy(0, 500));
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(isLocal ? 100 : 1500);
 
     const renderers = await page.locator(
       'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-video-renderer'
@@ -297,15 +302,15 @@ export async function findLongestVideoOnDate(targetDate) {
         console.log(`${tag}   Reached limit of 6 episodes analyzed.`);
         break;
       }
-      const linkEl = renderer.locator('a#video-title-link, a#thumbnail').first();
-      const href = await linkEl.getAttribute('href').catch(() => null);
+      const linkEl = renderer.locator('a[href*="/watch"]').first();
+      const href = await linkEl.getAttribute('href', { timeout: 2000 }).catch(() => null);
       if (!href || !href.includes('/watch')) continue;
       
       analyzed++;
-      const videoUrl = href.startsWith('http') ? href : `https://www.youtube.com${href}`;
+      const videoUrl = href.startsWith('http') ? href : `${config.youtubeBaseUrl}${href}`;
       const overlayText = await renderer
         .locator('ytd-thumbnail-overlay-time-status-renderer span, .ytd-thumbnail-overlay-time-status-renderer')
-        .first().textContent().catch(() => null);
+        .first().textContent({ timeout: 2000 }).catch(() => null);
       candidates.push({ url: videoUrl, durationMinutes: parseDurationMinutes(overlayText?.trim()) });
     }
 

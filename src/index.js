@@ -45,7 +45,11 @@ import { logEvent, logIdle, logError } from './logger.js';
 
 // ─── Job: find ────────────────────────────────────────────────────────────────
 
+let findInProgress = false;
+
 async function jobFind() {
+  if (findInProgress) { console.log('[find] Already running — skipping.'); return; }
+  findInProgress = true;
   const tag = '[find]';
 
   const state = readState();
@@ -63,28 +67,32 @@ async function jobFind() {
 
   console.log(`${tag} Checking for new stream...`);
 
-  const url = await findLatestStreamUrl();
-  if (!url) {
-    logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
-    return;
+  try {
+    const url = await findLatestStreamUrl();
+    if (!url) {
+      logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
+      return;
+    }
+
+    if (isAlreadyDone(url)) {
+      logIdle(`${tag} Already downloaded: ${url}`);
+      return;
+    }
+
+    writeState({
+      streamUrl: url,
+      foundAt: new Date().toISOString(),
+      status: 'found',
+      downloadedFile: null,
+      completedAt: null,
+      error: null,
+      valid: true,
+    });
+
+    logEvent(`${tag} Stream found: ${url}`);
+  } finally {
+    findInProgress = false;
   }
-
-  if (isAlreadyDone(url)) {
-    logIdle(`${tag} Already downloaded: ${url}`);
-    return;
-  }
-
-  writeState({
-    streamUrl: url,
-    foundAt: new Date().toISOString(),
-    status: 'found',
-    downloadedFile: null,
-    completedAt: null,
-    error: null,
-    valid: true,
-  });
-
-  logEvent(`${tag} Stream found: ${url}`);
 }
 
 // ─── Job: download ────────────────────────────────────────────────────────────
