@@ -52,23 +52,29 @@ async function jobFind() {
   findInProgress = true;
   const tag = '[find]';
 
-  const state = readState();
-
-  // If we already found (or downloaded) a stream today, don't search again
-  if (state.streamUrl && state.foundAt) {
-    const tz = config.timezone;
-    const foundDate = new Date(state.foundAt).toLocaleDateString('en-US', { timeZone: tz });
-    const today    = new Date().toLocaleDateString('en-US', { timeZone: tz });
-    if (foundDate === today) {
-      logIdle(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
-      return;
-    }
-  }
-
-  console.log(`${tag} Checking for new stream...`);
-
   try {
-    const url = await findLatestStreamUrl();
+    const state = readState();
+
+    // If we already found (or downloaded) a stream today, don't search again
+    if (state.streamUrl && state.foundAt) {
+      const tz = config.timezone;
+      const foundDate = new Date(state.foundAt).toLocaleDateString('en-US', { timeZone: tz });
+      const today    = new Date().toLocaleDateString('en-US', { timeZone: tz });
+      if (foundDate === today) {
+        logIdle(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
+        return;
+      }
+    }
+
+    console.log(`${tag} Checking for new stream...`);
+
+    const FIND_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max
+    const url = await Promise.race([
+      findLatestStreamUrl(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('findLatestStreamUrl timed out after 5min')), FIND_TIMEOUT_MS)
+      ),
+    ]);
     if (!url) {
       logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
       return;
