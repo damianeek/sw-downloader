@@ -1,4 +1,4 @@
-FROM node:22-slim
+FROM node:22-slim@sha256:32b9e321f262db540d55ac10dc529667cf4737546e097cdd36a843c62bcbf423
 
 # System dependencies: ffmpeg + Chromium (Playwright)
 RUN apt-get update && apt-get install -y \
@@ -38,7 +38,8 @@ WORKDIR /app
 COPY package.json ./
 RUN npm install
 
-# Install Playwright's Chromium browser
+# Install Playwright's Chromium browser — separate layer so it only rebuilds
+# when the playwright package version changes, not when app code changes
 RUN npx playwright install chromium
 
 COPY src/ ./src/

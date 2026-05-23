@@ -190,7 +190,10 @@ async function scrapeTab(page, tab) {
 }
 
 async function launchPage() {
-  const browser = await chromium.launch({ headless: config.headless });
+  const browser = await chromium.launch({
+    headless: config.headless,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+  });
   const context = await browser.newContext({
     userAgent:
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
