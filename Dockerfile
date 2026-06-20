@@ -53,6 +53,7 @@ ENV CHANNEL_HANDLE=stan_wyjatkowy \
     FIND_CRON="5 20 * * 6" \
     FIND_RETRY_CRON="*/5 20-23 * * 6" \
     DOWNLOAD_CRON="*/30 * * * *" \
+    UPDATE_CRON="0 19 * * 6" \
     TIMEZONE=Europe/Warsaw \
     RUN_NOW=false \
     HEADLESS=true

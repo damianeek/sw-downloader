@@ -65,6 +65,11 @@ export const config = {
   // Default: every 30 minutes
   downloadCron: process.env.DOWNLOAD_CRON || '*/30 * * * *',
 
+  // Cron: yt-dlp update schedule — runs before the expected stream to ensure
+  // the latest version is available. Also runs once at container startup.
+  // Default: Saturday 19:00 (1h before stream)
+  updateCron: process.env.UPDATE_CRON || '0 19 * * 6',
+
   // Timezone for all cron jobs
   timezone: process.env.TIMEZONE || 'Europe/Warsaw',
 
