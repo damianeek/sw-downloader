@@ -36,12 +36,32 @@ function nextCronTime(expression) {
 }
 
 const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
+import { execa } from 'execa';
 import { findLatestStreamUrl, findLongestVideoOnDate } from './findStream.js';
 import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
 import { generateNfo } from './nfo.js';
 import { logEvent, logIdle, logError } from './logger.js';
+
+// ─── Job: update yt-dlp ───────────────────────────────────────────────────────
+
+async function jobUpdate() {
+  const tag = '[update]';
+  console.log(`${tag} Updating yt-dlp...`);
+  try {
+    const { stdout, stderr } = await execa('pip3', ['install', '--break-system-packages', '-U', 'yt-dlp']);
+    const output = (stdout || stderr || '').trim();
+    // Log just the last line which contains the version info
+    const lastLine = output.split('\n').pop();
+    console.log(`${tag} ${lastLine}`);
+    // Log yt-dlp version for confirmation
+    const { stdout: ver } = await execa(config.ytdlpBin, ['--version']);
+    logEvent(`${tag} yt-dlp updated to ${ver.trim()}`);
+  } catch (err) {
+    logError(`${tag} Update failed: ${err.message}`);
+  }
+}
 
 // ─── Job: find ────────────────────────────────────────────────────────────────
 
@@ -181,19 +201,23 @@ function isInStreamWindow() {
 
 if (config.runNow || isInStreamWindow()) {
   const reason = config.runNow ? 'RUN_NOW=true' : 'Saturday stream window detected';
-  console.log(`=== sw-downloader v${version} — ${reason}, running both jobs immediately ===`);
-  jobFind().then(() => jobDownload()).catch(console.error);
+  console.log(`=== sw-downloader v${version} — ${reason}, running update + both jobs immediately ===`);
+  jobUpdate().then(() => jobFind()).then(() => jobDownload()).catch(console.error);
 } else {
   console.log(`=== sw-downloader v${version} started ===`);
   console.log(`Find cron    : ${config.findCron} (${config.timezone})`);
   console.log(`Retry cron   : ${config.findRetryCron} (${config.timezone})`);
   console.log(`Download cron: ${config.downloadCron} (${config.timezone})`);
+  console.log(`Update cron  : ${config.updateCron} (${config.timezone})`);
   console.log(`Channel      : @${config.channelHandle}`);
   console.log(`Output dir   : ${config.outputDir}`);
   console.log(`Max age      : ${config.maxAgeHours}h | Min duration: ${config.minDurationMinutes}min`);
+  // Update yt-dlp at startup even outside stream window
+  jobUpdate().catch(console.error);
 }
 
 // Always register cron jobs (they're no-ops outside their schedule)
 cron.schedule(config.findCron, jobFind, { timezone: config.timezone });
 cron.schedule(config.findRetryCron, jobFind, { timezone: config.timezone });
 cron.schedule(config.downloadCron, jobDownload, { timezone: config.timezone });
+cron.schedule(config.updateCron, jobUpdate, { timezone: config.timezone });
