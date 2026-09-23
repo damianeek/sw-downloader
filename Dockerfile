@@ -3,6 +3,7 @@ FROM node:22-slim@sha256:32b9e321f262db540d55ac10dc529667cf4737546e097cdd36a843c
 # System dependencies: ffmpeg + Chromium (Playwright)
 RUN apt-get update && apt-get install -y \
     curl \
+    tini \
     unzip \
     ffmpeg \
     # Chromium runtime deps
@@ -60,4 +61,8 @@ ENV CHANNEL_HANDLE=stan_wyjatkowy \
 
 VOLUME ["/downloads", "/config"]
 
+# tini as PID 1 reaps orphaned Chromium helper processes (zygote, renderers,
+# crashpad) that get reparented to PID 1 after browser.close() — node never
+# wait()s on processes it didn't spawn, so without tini they pile up as zombies
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "src/index.js"]
