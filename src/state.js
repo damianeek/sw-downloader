@@ -8,6 +8,7 @@
  *   foundAt: string|null,      // ISO datetime
  *   status: 'idle'|'found'|'downloading'|'done'|'failed',
  *   downloadedFile: string|null,
+ *   audioFile: string|null,    // audio-only copy, when AUDIO_OUTPUT_DIR is mounted
  *   completedAt: string|null,
  *   error: string|null,
  *   valid: boolean             // set to false to trigger a re-download
@@ -23,6 +24,7 @@ const DEFAULT_STATE = {
   foundAt: null,
   status: 'idle',
   downloadedFile: null,
+  audioFile: null,
   completedAt: null,
   error: null,
   valid: true,
