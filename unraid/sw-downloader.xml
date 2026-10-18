@@ -27,6 +27,17 @@
     Mask="false"/>
 
   <Config
+    Name="Audio"
+    Target="/audio"
+    Default=""
+    Mode="rw"
+    Description="Optional. Where audio-only copies of each episode are saved (with cover, title and description). Leave empty to disable audio extraction."
+    Type="Path"
+    Display="always"
+    Required="false"
+    Mask="false"/>
+
+  <Config
     Name="Config"
     Target="/config"
     Default="/mnt/user/appdata/sw-downloader"
@@ -91,6 +102,17 @@
     Default="false"
     Mode=""
     Description="Set to true to download Polish subtitles and embed them as an internal track in the MP4. Tries manual subs first, falls back to auto-generated."
+    Type="Variable"
+    Display="advanced"
+    Required="false"
+    Mask="false"/>
+
+  <Config
+    Name="Audio Format"
+    Target="AUDIO_FORMAT"
+    Default="m4a"
+    Mode=""
+    Description="Format of the audio-only copy: m4a (lossless copy, fast) or mp3 (re-encoded, widest compatibility). Used only when the Audio path is set."
     Type="Variable"
     Display="advanced"
     Required="false"
