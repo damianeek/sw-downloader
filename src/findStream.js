@@ -191,7 +191,7 @@ async function scrapeTab(page, tab) {
 
 async function launchPage() {
   const browser = await chromium.launch({
-    headless: config.headless,
+    headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
   const context = await browser.newContext({

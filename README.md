@@ -81,6 +81,10 @@ docker logs -f sw-downloader
    - Container Path: `/downloads`
    - Host Path: your media share, e.g. `/mnt/user/Media/`
 
+   Optionally add a second **Path** for audio-only copies:
+   - Container Path: `/audio`
+   - Host Path: e.g. `/mnt/user/Media/Podcasts/`
+
 4. Add **Variables** (optional, these are the defaults):
    - `TIMEZONE` = `Europe/Warsaw`
    - `CHANNEL_HANDLE` = `stan_wyjatkowy`
@@ -120,14 +124,15 @@ All settings are environment variables. Copy `.env.example` to `.env` and adjust
 | `STATE_FILE` | `/downloads/state.json` | Persisted download state |
 | `MAX_AGE_HOURS` | `12` | Max age (hours) of video to be considered the unedited stream |
 | `MIN_DURATION_MINUTES` | `60` | Min duration (minutes) — filters out already-edited short versions |
+| `AUDIO_OUTPUT_DIR` | `/audio` (Docker), empty (local) | Where audio-only copies are saved — extraction runs only if this directory exists (see [Audio-only copy](#audio-only-copy)) |
+| `AUDIO_FORMAT` | `m4a` | `m4a` (lossless stream copy, fast) or `mp3` (re-encoded) |
 | `SHOW_YEAR` | `2022` | Show premiere year used in filename |
 | `FIND_CRON` | `5 20 * * 6` | When to look for a new stream (cron, Europe/Warsaw) |
 | `DOWNLOAD_CRON` | `*/30 * * * *` | How often to attempt download after stream is found |
 | `TIMEZONE` | `Europe/Warsaw` | Timezone for all cron jobs |
 | `YTDLP_BIN` | `yt-dlp` | Path to yt-dlp binary |
-| `FFMPEG_LOCATION` | `/usr/bin/ffmpeg` | Path to ffmpeg (bundled in Docker, override for local dev) |
+| `FFMPEG_LOCATION` | `/usr/local/bin/ffmpeg` | Path to ffmpeg (yt-dlp static build bundled in Docker, override for local dev) |
 | `RUN_NOW` | `false` | Set to `true` to trigger immediately instead of waiting for cron |
-| `HEADLESS` | `true` | Set to `false` to show the browser window (local debugging only) |
 
 ### Docker Compose
 
@@ -152,6 +157,31 @@ services:
 Stan Wyjątkowy (2022) - 2026-04-05 - Episode title here [videoId].mp4
 ```
 
+The MP4 has the YouTube thumbnail embedded as cover art, plus title, description, upload date and chapters as metadata.
+
+---
+
+## Audio-only copy
+
+Mount a directory at `/audio` and each downloaded episode is also saved there as audio only — same filename, `.m4a` (or `.mp3` with `AUDIO_FORMAT=mp3`). Cover art, title, description and chapters are carried over from the video, so the file is ready for a podcast / audiobook player.
+
+```bash
+docker run -d \
+  --name sw-downloader \
+  --restart unless-stopped \
+  -v "/path/to/downloads:/downloads" \
+  -v "/path/to/audio:/audio" \
+  ghcr.io/damianeek/sw-downloader:latest
+```
+
+No `/audio` mount → no audio file. Extraction runs after the download (and NFO); if it fails, the video stays marked as done and extraction is retried on the next download tick.
+
+Convert an existing video by hand:
+
+```bash
+AUDIO_OUTPUT_DIR=/path/to/audio node src/audio.js "/path/to/video.mp4"
+```
+
 ---
 
 ## Local development
@@ -163,7 +193,7 @@ npx playwright install chromium
 # copy and edit .env
 cp .env.example .env
 
-# test the scraper (opens browser visibly with HEADLESS=false)
+# test the scraper (debug screenshots land next to the state file)
 node src/findStream.js
 
 # test a download directly
@@ -183,6 +213,7 @@ The state file (`state.json`) tracks what was found and downloaded. Delete it to
   "foundAt": "2026-04-05T20:05:00.000Z",
   "status": "done",
   "downloadedFile": "/downloads/Stan Wyjątkowy (2022) - 2026-04-05 - ... .mp4",
+  "audioFile": "/audio/Stan Wyjątkowy (2022) - 2026-04-05 - ... .m4a",
   "completedAt": "2026-04-05T21:03:00.000Z",
   "error": null
 }

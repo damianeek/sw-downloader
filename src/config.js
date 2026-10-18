@@ -23,6 +23,15 @@ for (const method of ['log', 'warn', 'error']) {
 
 const stateFile = process.env.STATE_FILE || '/downloads/state.json';
 
+const AUDIO_FORMATS = ['m4a', 'mp3'];
+
+function parseAudioFormat(value) {
+  const format = (value || 'm4a').toLowerCase();
+  if (AUDIO_FORMATS.includes(format)) return format;
+  console.warn(`Unknown AUDIO_FORMAT "${value}" — falling back to m4a.`);
+  return 'm4a';
+}
+
 export const config = {
   // YouTube channel handle (without @)
   channelHandle: process.env.CHANNEL_HANDLE || 'stan_wyjatkowy',
@@ -52,6 +61,14 @@ export const config = {
   // Whether to download Polish subtitles and embed them as an internal track in the MP4.
   // yt-dlp tries manual subs first, falls back to auto-generated.
   downloadSubtitles: process.env.DOWNLOAD_SUBTITLES === 'true',
+
+  // Directory for audio-only copies of downloaded videos (with cover, description
+  // and chapters taken from the video). Extraction runs only when this directory
+  // exists — in Docker that means a volume is mounted at this path.
+  audioOutputDir: process.env.AUDIO_OUTPUT_DIR || '',
+
+  // Audio format: 'm4a' (lossless stream copy, fast) or 'mp3' (re-encoded)
+  audioFormat: parseAudioFormat(process.env.AUDIO_FORMAT),
 
   // Cron: initial trigger — when to first look for the stream
   // Default: Saturday 20:05 Europe/Warsaw
@@ -86,9 +103,6 @@ export const config = {
 
   // How old (in hours) a video can be and still be considered the unedited stream.
   maxAgeHours: parseFloat(process.env.MAX_AGE_HOURS || '12'),
-
-  // Set to 'false' to show the browser window (for debugging)
-  headless: process.env.HEADLESS !== 'false',
 
   // Base URL for YouTube (used for mocking during tests)
   youtubeBaseUrl: process.env.YOUTUBE_BASE_URL || 'https://www.youtube.com',
