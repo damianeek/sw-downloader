@@ -42,7 +42,6 @@ import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
 import { readState, writeState, isAlreadyDone } from './state.js';
 import { generateNfo } from './nfo.js';
-import { extractAudio, isAudioEnabled } from './audio.js';
 import { logEvent, logIdle, logError } from './logger.js';
 
 // ─── Job: update yt-dlp ───────────────────────────────────────────────────────
@@ -51,9 +50,7 @@ async function jobUpdate() {
   const tag = '[update]';
   console.log(`${tag} Updating yt-dlp...`);
   try {
-    // Extras must match the Dockerfile — without them pip upgrades yt-dlp alone and
-    // leaves yt-dlp-ejs (pinned to the yt-dlp version) outdated
-    const { stdout, stderr } = await execa('pip3', ['install', '--break-system-packages', '-U', 'yt-dlp[default,curl-cffi]']);
+    const { stdout, stderr } = await execa('pip3', ['install', '--break-system-packages', '-U', 'yt-dlp']);
     const output = (stdout || stderr || '').trim();
     // Log just the last line which contains the version info
     const lastLine = output.split('\n').pop();
@@ -113,7 +110,6 @@ async function jobFind() {
       foundAt: new Date().toISOString(),
       status: 'found',
       downloadedFile: null,
-      audioFile: null,
       completedAt: null,
       error: null,
       valid: true,
@@ -152,13 +148,9 @@ async function jobDownload() {
     const newUrl = replacement || state.streamUrl;
     if (replacement) logEvent(`${tag} Replacement found: ${newUrl}`);
     else logEvent(`${tag} No replacement found — re-downloading original: ${newUrl}`);
-    writeState({ streamUrl: newUrl, status: 'found', downloadedFile: null, audioFile: null, completedAt: null, error: null, valid: true });
+    writeState({ streamUrl: newUrl, status: 'found', downloadedFile: null, completedAt: null, error: null, valid: true });
     downloadedFile = null;
   }
-
-  // Set when the video is (re)downloaded in this tick — the audio copy must then
-  // be regenerated even if a file with the same name already exists
-  let justDownloaded = false;
 
   if (state.status !== 'done' || downloadedFile === null) {
     const streamStatus = await checkStreamStatus(state.streamUrl);
@@ -180,7 +172,6 @@ async function jobDownload() {
       downloadedFile = await downloadStream(state.streamUrl);
       writeState({ status: 'done', downloadedFile, completedAt: new Date().toISOString(), error: null, valid: true });
       logEvent(`${tag} Download complete: ${downloadedFile}`);
-      justDownloaded = true;
     } catch (err) {
       logError(`${tag} Download failed: ${err.message}`);
       writeState({ status: 'failed', error: err.message });
@@ -193,20 +184,6 @@ async function jobDownload() {
   // ── Step 2: NFO sidecar (skip if disabled or file already exists) ─────────
   if (config.generateNfo && downloadedFile) {
     await generateNfo(state.streamUrl, downloadedFile);
-  }
-
-  // ── Step 3: audio-only copy (skip if no audio dir mounted) ────────────────
-  // A failure here doesn't touch the download status — retried on the next tick
-  if (downloadedFile && isAudioEnabled()) {
-    try {
-      const audioFile = await extractAudio(downloadedFile, { overwrite: justDownloaded });
-      if (audioFile !== state.audioFile || justDownloaded) {
-        writeState({ audioFile });
-        logEvent(`[audio] Audio ready: ${audioFile}`);
-      }
-    } catch (err) {
-      logError(`[audio] Extraction failed: ${err.message}`);
-    }
   }
 }
 
@@ -234,9 +211,6 @@ if (config.runNow || isInStreamWindow()) {
   console.log(`Update cron  : ${config.updateCron} (${config.timezone})`);
   console.log(`Channel      : @${config.channelHandle}`);
   console.log(`Output dir   : ${config.outputDir}`);
-  console.log(`Audio dir    : ${isAudioEnabled()
-    ? `${config.audioOutputDir} (${config.audioFormat})`
-    : `disabled (${config.audioOutputDir || 'AUDIO_OUTPUT_DIR'} not mounted)`}`);
   console.log(`Max age      : ${config.maxAgeHours}h | Min duration: ${config.minDurationMinutes}min`);
   // Update yt-dlp at startup even outside stream window
   jobUpdate().catch(console.error);

@@ -26,11 +26,6 @@ export async function downloadStream(videoUrl) {
     '--output', filenameTemplate,
     '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
     '--merge-output-format', 'mp4',
-    // Title, description, date and chapters + thumbnail as cover art go into the
-    // MP4 itself — the audio-only copy (audio.js) takes them from there.
-    '--embed-metadata',
-    '--embed-thumbnail',
-    '--convert-thumbnails', 'jpg',
     '--no-playlist',
     '--newline',
   ];
