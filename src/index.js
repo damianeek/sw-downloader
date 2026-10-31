@@ -99,7 +99,7 @@ async function jobFind() {
       ),
     ]);
     if (!url) {
-      logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`);
+      logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`, 'no-match');
       return;
     }
 
@@ -120,6 +120,8 @@ async function jobFind() {
     });
 
     logEvent(`${tag} Stream found: ${url}`);
+  } catch (err) {
+    logError(`${tag} Find failed: ${err.message}`);
   } finally {
     findInProgress = false;
   }
@@ -164,12 +166,12 @@ async function jobDownload() {
     const streamStatus = await checkStreamStatus(state.streamUrl);
 
     if (streamStatus === 'live') {
-      logIdle(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`);
+      logIdle(`${tag} Stream still live. Next check at ${nextCronTime(config.downloadCron)}.`, 'live');
       return;
     }
 
     if (streamStatus === 'unknown') {
-      logIdle(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`);
+      logIdle(`${tag} Could not determine stream status. Next check at ${nextCronTime(config.downloadCron)}.`, 'unknown');
       return;
     }
 
