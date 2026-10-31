@@ -38,24 +38,26 @@ const TABS = [
 /**
  * Parses YouTube relative time strings into a Date.
  * Examples: "2 hours ago", "Streamed 5 hours ago", "1 day ago"
+ * Also the compact format YouTube switched to: "8h ago", "5m ago", "7d ago", "2w ago", "1mo ago", "1y ago"
  */
-function parseRelativeTime(text) {
+export function parseRelativeTime(text) {
   if (!text) return null;
 
-  const match = text.match(/(\d+)\s+(second|minute|hour|day|week|month|year)/i);
+  // "mo" before "m" so "1mo" isn't read as 1 minute
+  const match = text.match(/(\d+)\s*(seconds?|minutes?|mins?|hours?|days?|weeks?|months?|mo|years?|s|m|h|d|w|y)\b/i);
   if (!match) return null;
 
   const value = parseInt(match[1], 10);
   const unit  = match[2].toLowerCase();
 
   let ms;
-  if      (unit.startsWith('sec'))   ms = value * 1000;
-  else if (unit.startsWith('min'))   ms = value * 60_000;
-  else if (unit.startsWith('hour'))  ms = value * 3_600_000;
-  else if (unit.startsWith('day'))   ms = value * 86_400_000;
-  else if (unit.startsWith('week'))  ms = value * 7 * 86_400_000;
-  else if (unit.startsWith('month')) ms = value * 30 * 86_400_000;
-  else if (unit.startsWith('year'))  ms = value * 365 * 86_400_000;
+  if      (unit.startsWith('s'))  ms = value * 1000;
+  else if (unit.startsWith('mo')) ms = value * 30 * 86_400_000;
+  else if (unit.startsWith('m'))  ms = value * 60_000;
+  else if (unit.startsWith('h'))  ms = value * 3_600_000;
+  else if (unit.startsWith('d'))  ms = value * 86_400_000;
+  else if (unit.startsWith('w'))  ms = value * 7 * 86_400_000;
+  else if (unit.startsWith('y'))  ms = value * 365 * 86_400_000;
   else return null;
 
   return new Date(Date.now() - ms);
