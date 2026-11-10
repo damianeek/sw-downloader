@@ -47,9 +47,3 @@ export function writeState(patch) {
   fs.writeFileSync(config.stateFile, JSON.stringify(next, null, 2), 'utf8');
   return next;
 }
-
-/** Returns true if this exact URL was already successfully downloaded. */
-export function isAlreadyDone(url) {
-  const state = readState();
-  return state.streamUrl === url && state.status === 'done';
-}

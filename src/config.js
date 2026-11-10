@@ -70,22 +70,23 @@ export const config = {
   // Audio format: 'm4a' (lossless stream copy, fast) or 'mp3' (re-encoded)
   audioFormat: parseAudioFormat(process.env.AUDIO_FORMAT),
 
-  // Cron: initial trigger — when to first look for the stream
-  // Default: Saturday 20:05 Europe/Warsaw
-  findCron: process.env.FIND_CRON || '5 20 * * 6',
+  // Cron: how often to look for a new episode. Episodes no longer air only on
+  // Saturday evenings, so the default checks every day
+  // Default: every 15 minutes
+  findCron: process.env.FIND_CRON || '*/15 * * * *',
 
-  // Cron: retry trigger — how often to keep looking if stream not found yet
-  // Default: every 5 min, Saturday 20:00–23:59
-  findRetryCron: process.env.FIND_RETRY_CRON || '*/5 20-23 * * 6',
+  // Cron: optional extra find schedule, e.g. denser checks around a known
+  // airing time. Empty = disabled
+  findRetryCron: process.env.FIND_RETRY_CRON || '',
 
   // Cron: how often to attempt downloading after stream is found
   // Default: every 30 minutes
   downloadCron: process.env.DOWNLOAD_CRON || '*/30 * * * *',
 
-  // Cron: yt-dlp update schedule — runs before the expected stream to ensure
-  // the latest version is available. Also runs once at container startup.
-  // Default: Saturday 19:00 (1h before stream)
-  updateCron: process.env.UPDATE_CRON || '0 19 * * 6',
+  // Cron: yt-dlp update schedule — an episode can come out any day, so keep
+  // yt-dlp fresh daily. Also runs once at container startup.
+  // Default: every day at 04:00
+  updateCron: process.env.UPDATE_CRON || '0 4 * * *',
 
   // Timezone for all cron jobs
   timezone: process.env.TIMEZONE || 'Europe/Warsaw',
@@ -99,7 +100,9 @@ export const config = {
   showYear: process.env.SHOW_YEAR || '2022',
 
   // Minimum video duration (in minutes) to be considered the full unedited stream.
-  minDurationMinutes: parseFloat(process.env.MIN_DURATION_MINUTES || '60'),
+  // Clips on the channel run up to ~17 min and special editions 48–60 min, while
+  // fresh episodes are 2h+. Live streams have no duration and always pass.
+  minDurationMinutes: parseFloat(process.env.MIN_DURATION_MINUTES || '90'),
 
   // How old (in hours) a video can be and still be considered the unedited stream.
   maxAgeHours: parseFloat(process.env.MAX_AGE_HOURS || '12'),

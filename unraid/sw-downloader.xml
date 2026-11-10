@@ -8,7 +8,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/damianeek/sw-downloader</Support>
   <Project>https://github.com/damianeek/sw-downloader</Project>
-  <Overview>Automatically downloads the latest Stan Wyjatkowy Saturday stream from YouTube before the channel edits the VOD. Uses Playwright to detect the stream and yt-dlp to download it once finished.</Overview>
+  <Overview>Automatically downloads the latest Stan Wyjatkowy episode from YouTube before the channel edits the VOD. Uses Playwright to detect the stream and yt-dlp to download it once finished.</Overview>
   <Category>Downloaders:</Category>
   <Icon>https://www.youtube.com/favicon.ico</Icon>
   <ExtraParams>--restart unless-stopped</ExtraParams>
@@ -132,9 +132,9 @@
   <Config
     Name="Min Duration (minutes)"
     Target="MIN_DURATION_MINUTES"
-    Default="60"
+    Default="90"
     Mode=""
-    Description="Minimum video length in minutes. Shorter videos are assumed to be already edited."
+    Description="Minimum video length in minutes. Filters out clips and special editions (up to ~60 min). Live streams always pass."
     Type="Variable"
     Display="advanced"
     Required="false"
@@ -154,9 +154,9 @@
   <Config
     Name="Find Cron"
     Target="FIND_CRON"
-    Default="5 20 * * 6"
+    Default="*/15 * * * *"
     Mode=""
-    Description="Cron expression for the initial stream check. Default: Saturday 20:05."
+    Description="Cron expression for how often to look for a new episode. Default: every 15 minutes, any day."
     Type="Variable"
     Display="advanced"
     Required="false"
@@ -165,9 +165,9 @@
   <Config
     Name="Find Retry Cron"
     Target="FIND_RETRY_CRON"
-    Default="*/5 20-23 * * 6"
+    Default=""
     Mode=""
-    Description="Cron expression for retrying the stream check if not found yet. Default: every 5 min Saturday evening."
+    Description="Optional extra find schedule on top of Find Cron (e.g. denser checks around a known airing time). Empty = disabled."
     Type="Variable"
     Display="advanced"
     Required="false"

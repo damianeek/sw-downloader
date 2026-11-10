@@ -1,20 +1,15 @@
 /**
- * Entry point — three cron jobs:
+ * Entry point — cron jobs (plus a daily yt-dlp update):
  *
- *  JOB 1 — "find" initial  (default: Sat 20:05)
- *    First trigger for the weekly stream.
+ *  JOB 1 — "find"          (default: every 15 min, any day)
+ *    Looks for a fresh, long video. A newly found one is saved to state and
+ *    the download job runs right away. An optional FIND_RETRY_CRON adds
+ *    extra checks on top.
  *
- *  JOB 2 — "find" retry    (default: every 5 min, Sat 20:00–23:59)
- *    Keeps looking every 5 min in case the stream wasn't up at 20:05.
- *    Skips immediately if the URL is already in state.
- *
- *  JOB 3 — "download"      (default: every 30 min)
+ *  JOB 2 — "download"      (default: every 30 min)
  *    Once a URL is in state, checks if stream is finished and downloads.
  *
- * On startup: if it's Saturday and past 20:05, both jobs run immediately
- * so a freshly deployed/restarted container catches up without waiting.
- *
- * Set RUN_NOW=true to force both jobs immediately regardless of day/time.
+ * Set RUN_NOW=true to run both jobs immediately at startup.
  */
 
 import cron from 'node-cron';
@@ -40,7 +35,7 @@ import { execa } from 'execa';
 import { findLatestStreamUrl, findLongestVideoOnDate } from './findStream.js';
 import { checkStreamStatus } from './checkStreamStatus.js';
 import { downloadStream } from './download.js';
-import { readState, writeState, isAlreadyDone } from './state.js';
+import { readState, writeState } from './state.js';
 import { generateNfo } from './nfo.js';
 import { extractAudio, isAudioEnabled } from './audio.js';
 import { logEvent, logIdle, logError } from './logger.js';
@@ -70,25 +65,13 @@ async function jobUpdate() {
 
 let findInProgress = false;
 
+/** Returns true when a new stream was saved to state. */
 async function jobFind() {
-  if (findInProgress) { console.log('[find] Already running — skipping.'); return; }
+  if (findInProgress) { console.log('[find] Already running — skipping.'); return false; }
   findInProgress = true;
   const tag = '[find]';
 
   try {
-    const state = readState();
-
-    // If we already found (or downloaded) a stream today, don't search again
-    if (state.streamUrl && state.foundAt) {
-      const tz = config.timezone;
-      const foundDate = new Date(state.foundAt).toLocaleDateString('en-US', { timeZone: tz });
-      const today    = new Date().toLocaleDateString('en-US', { timeZone: tz });
-      if (foundDate === today) {
-        logIdle(`${tag} Stream already found today (${state.status}): ${state.streamUrl} — skipping.`);
-        return;
-      }
-    }
-
     console.log(`${tag} Checking for new stream...`);
 
     const FIND_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max
@@ -99,13 +82,22 @@ async function jobFind() {
       ),
     ]);
     if (!url) {
-      logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findRetryCron)}.`, 'no-match');
-      return;
+      logIdle(`${tag} No matching video found (< ${config.maxAgeHours}h old, > ${config.minDurationMinutes}min). Next check at ${nextCronTime(config.findCron)}.`, 'no-match');
+      return false;
     }
 
-    if (isAlreadyDone(url)) {
-      logIdle(`${tag} Already downloaded: ${url}`);
-      return;
+    // Compared by URL, not by date — the same video stays a candidate for
+    // MAX_AGE_HOURS, which can cross midnight
+    const state = readState();
+    if (url === state.streamUrl) {
+      logIdle(`${tag} Already tracked (${state.status}): ${url}`);
+      return false;
+    }
+
+    // Don't clobber a running download — the new one is picked up on a later tick
+    if (state.status === 'downloading') {
+      logIdle(`${tag} New stream ${url} found, but ${state.streamUrl} is still downloading — will retry.`);
+      return false;
     }
 
     writeState({
@@ -120,8 +112,10 @@ async function jobFind() {
     });
 
     logEvent(`${tag} Stream found: ${url}`);
+    return true;
   } catch (err) {
     logError(`${tag} Find failed: ${err.message}`);
+    return false;
   } finally {
     findInProgress = false;
   }
@@ -212,26 +206,15 @@ async function jobDownload() {
   }
 }
 
-// ─── Startup catch-up: run immediately if it's Saturday past 20:05 ────────────
-
-function isInStreamWindow() {
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: config.timezone }));
-  const isSaturday = now.getDay() === 6;
-  const isPast2005 = now.getHours() > 20 || (now.getHours() === 20 && now.getMinutes() >= 5);
-  const isBefore2359 = now.getHours() <= 23;
-  return isSaturday && isPast2005 && isBefore2359;
-}
-
 // ─── Scheduler ────────────────────────────────────────────────────────────────
 
-if (config.runNow || isInStreamWindow()) {
-  const reason = config.runNow ? 'RUN_NOW=true' : 'Saturday stream window detected';
-  console.log(`=== sw-downloader v${version} — ${reason}, running update + both jobs immediately ===`);
+if (config.runNow) {
+  console.log(`=== sw-downloader v${version} — RUN_NOW=true, running update + both jobs immediately ===`);
   jobUpdate().then(() => jobFind()).then(() => jobDownload()).catch(console.error);
 } else {
   console.log(`=== sw-downloader v${version} started ===`);
   console.log(`Find cron    : ${config.findCron} (${config.timezone})`);
-  console.log(`Retry cron   : ${config.findRetryCron} (${config.timezone})`);
+  console.log(`Retry cron   : ${config.findRetryCron ? `${config.findRetryCron} (${config.timezone})` : 'disabled'}`);
   console.log(`Download cron: ${config.downloadCron} (${config.timezone})`);
   console.log(`Update cron  : ${config.updateCron} (${config.timezone})`);
   console.log(`Channel      : @${config.channelHandle}`);
@@ -240,12 +223,15 @@ if (config.runNow || isInStreamWindow()) {
     ? `${config.audioOutputDir} (${config.audioFormat})`
     : `disabled (${config.audioOutputDir || 'AUDIO_OUTPUT_DIR'} not mounted)`}`);
   console.log(`Max age      : ${config.maxAgeHours}h | Min duration: ${config.minDurationMinutes}min`);
-  // Update yt-dlp at startup even outside stream window
   jobUpdate().catch(console.error);
 }
 
-// Always register cron jobs (they're no-ops outside their schedule)
-cron.schedule(config.findCron, jobFind, { timezone: config.timezone });
-cron.schedule(config.findRetryCron, jobFind, { timezone: config.timezone });
+// A freshly found stream is downloaded right away instead of waiting for the download tick
+async function jobFindAndDownload() {
+  if (await jobFind()) await jobDownload();
+}
+
+cron.schedule(config.findCron, jobFindAndDownload, { timezone: config.timezone });
+if (config.findRetryCron) cron.schedule(config.findRetryCron, jobFindAndDownload, { timezone: config.timezone });
 cron.schedule(config.downloadCron, jobDownload, { timezone: config.timezone });
 cron.schedule(config.updateCron, jobUpdate, { timezone: config.timezone });

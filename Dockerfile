@@ -65,10 +65,9 @@ ENV CHANNEL_HANDLE=stan_wyjatkowy \
     FFMPEG_LOCATION=/usr/local/bin/ffmpeg \
     AUDIO_OUTPUT_DIR=/audio \
     AUDIO_FORMAT=m4a \
-    FIND_CRON="5 20 * * 6" \
-    FIND_RETRY_CRON="*/5 20-23 * * 6" \
+    FIND_CRON="*/15 * * * *" \
     DOWNLOAD_CRON="*/30 * * * *" \
-    UPDATE_CRON="0 19 * * 6" \
+    UPDATE_CRON="0 4 * * *" \
     TIMEZONE=Europe/Warsaw \
     RUN_NOW=false
 

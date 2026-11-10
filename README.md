@@ -2,11 +2,11 @@
 
 > **Work in progress** — expect rough edges and breaking changes.
 
-Automatically downloads the latest **Stan Wyjątkowy** Saturday stream from YouTube before the channel edits the VOD.
+Automatically downloads the latest **Stan Wyjątkowy** episode from YouTube before the channel edits the VOD.
 
 Runs as a Docker container with two independent cron jobs:
 
-- **Find job** — Playwright scrapes the channel (Home, Videos, Live tabs) looking for a video uploaded in the last 12 hours that is longer than 60 minutes
+- **Find job** — every 15 minutes, any day, Playwright scrapes the channel (Home, Videos, Live tabs) looking for a live stream or a video uploaded in the last 12 hours that is longer than 90 minutes
 - **Download job** — polls every 30 minutes; once the stream is detected as finished, downloads the full VOD via yt-dlp
 
 ---
@@ -14,8 +14,9 @@ Runs as a Docker container with two independent cron jobs:
 ## How it works
 
 ```
-Sat 20:05  →  Playwright checks channel tabs
-               ✓ video < 12h old AND > 60min → save URL to state.json
+Every 15m  →  Playwright checks channel tabs
+               ✓ live, or video < 12h old AND > 90min → save URL to state.json
+                 and run the download step right away
 
 Every 30m  →  check state
                live?     → skip, retry next tick
@@ -49,7 +50,7 @@ docker run -d \
   ghcr.io/damianeek/sw-downloader:latest
 ```
 
-Test immediately without waiting for Saturday:
+Test immediately without waiting for cron:
 
 ```bash
 docker run --rm \
@@ -89,7 +90,7 @@ docker logs -f sw-downloader
    - `TIMEZONE` = `Europe/Warsaw`
    - `CHANNEL_HANDLE` = `stan_wyjatkowy`
    - `MAX_AGE_HOURS` = `12`
-   - `MIN_DURATION_MINUTES` = `60`
+   - `MIN_DURATION_MINUTES` = `90`
 
 5. Click **Apply** — Unraid will pull the image and start the container automatically.
 
@@ -123,12 +124,14 @@ All settings are environment variables. Copy `.env.example` to `.env` and adjust
 | `OUTPUT_DIR` | `/downloads` | Where downloaded videos are saved |
 | `STATE_FILE` | `/downloads/state.json` | Persisted download state |
 | `MAX_AGE_HOURS` | `12` | Max age (hours) of video to be considered the unedited stream |
-| `MIN_DURATION_MINUTES` | `60` | Min duration (minutes) — filters out already-edited short versions |
+| `MIN_DURATION_MINUTES` | `90` | Min duration (minutes) — filters out clips and special editions (live streams always pass) |
 | `AUDIO_OUTPUT_DIR` | `/audio` (Docker), empty (local) | Where audio-only copies are saved — extraction runs only if this directory exists (see [Audio-only copy](#audio-only-copy)) |
 | `AUDIO_FORMAT` | `m4a` | `m4a` (lossless stream copy, fast) or `mp3` (re-encoded) |
 | `SHOW_YEAR` | `2022` | Show premiere year used in filename |
-| `FIND_CRON` | `5 20 * * 6` | When to look for a new stream (cron, Europe/Warsaw) |
+| `FIND_CRON` | `*/15 * * * *` | How often to look for a new episode, any day (cron, Europe/Warsaw) |
+| `FIND_RETRY_CRON` | empty | Optional extra find schedule on top of `FIND_CRON` |
 | `DOWNLOAD_CRON` | `*/30 * * * *` | How often to attempt download after stream is found |
+| `UPDATE_CRON` | `0 4 * * *` | When yt-dlp updates itself (also at startup) |
 | `TIMEZONE` | `Europe/Warsaw` | Timezone for all cron jobs |
 | `YTDLP_BIN` | `yt-dlp` | Path to yt-dlp binary |
 | `FFMPEG_LOCATION` | `/usr/local/bin/ffmpeg` | Path to ffmpeg (yt-dlp static build bundled in Docker, override for local dev) |
