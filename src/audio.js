@@ -45,9 +45,14 @@ export async function extractAudio(videoFile, { overwrite = false } = {}) {
     return audioFile;
   }
 
-  const coverIndex = await findCoverStreamIndex(videoFile);
+  const { coverIndex, dateTag } = await probeVideo(videoFile);
   if (coverIndex === null) {
     console.warn(`[audio] No embedded cover in ${videoFile} — audio will have no artwork.`);
+  }
+
+  const date = toIsoDate(dateTag);
+  if (!date) {
+    console.warn(`[audio] No usable date tag in ${videoFile} (got "${dateTag ?? ''}") — copied as-is.`);
   }
 
   // Write to a .part file first so media scanners never pick up a half-written file
@@ -55,7 +60,7 @@ export async function extractAudio(videoFile, { overwrite = false } = {}) {
   console.log(`[audio] Extracting ${config.audioFormat}: ${audioFile}`);
 
   try {
-    await execa(ffBin('ffmpeg'), buildFfmpegArgs(videoFile, partFile, config.audioFormat, coverIndex));
+    await execa(ffBin('ffmpeg'), buildFfmpegArgs(videoFile, partFile, config.audioFormat, coverIndex, date));
 
     if (fs.statSync(partFile).size === 0) {
       throw new Error(`Extracted audio is empty: ${partFile}`);
@@ -76,9 +81,10 @@ export async function extractAudio(videoFile, { overwrite = false } = {}) {
  * @param {string} output
  * @param {'m4a'|'mp3'} format
  * @param {number|null} coverIndex  index of the attached_pic stream in input, if any
+ * @param {string|null} [date]  publish date as YYYY-MM-DD, replaces the copied date tag
  * @returns {string[]}
  */
-export function buildFfmpegArgs(input, output, format, coverIndex) {
+export function buildFfmpegArgs(input, output, format, coverIndex, date = null) {
   const { muxer, codec } = FORMATS[format];
 
   // First audio stream only — skips the video and any embedded subtitle track
@@ -89,28 +95,49 @@ export function buildFfmpegArgs(input, output, format, coverIndex) {
   }
 
   // Title, description, date etc. + chapters come from the video's container metadata
-  args.push('-map_metadata', '0', '-map_chapters', '0', ...codec, '-f', muxer, output);
+  args.push('-map_metadata', '0', '-map_chapters', '0');
+  if (date) args.push('-metadata', `date=${date}`);
+  args.push(...codec, '-f', muxer, output);
   return args;
 }
 
 /**
- * Finds the stream that yt-dlp's --embed-thumbnail added as cover art.
- * @returns {Promise<number|null>}
+ * Normalizes a date tag to YYYY-MM-DD. yt-dlp writes upload_date as YYYYMMDD,
+ * which players that parse the tag with new Date() (Audiobookshelf) reject.
+ * @param {string|undefined} value  YYYYMMDD, YYYY-MM-DD or an ISO timestamp
+ * @returns {string|null} null when the value isn't a full, valid date
  */
-async function findCoverStreamIndex(videoFile) {
+export function toIsoDate(value) {
+  const m = value?.trim().match(/^(\d{4})-?(\d{2})-?(\d{2})(?:$|T)/);
+  if (!m) return null;
+  const iso = `${m[1]}-${m[2]}-${m[3]}`;
+  // Round-trip rejects impossible dates like 2026-13-40
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(iso) ? iso : null;
+}
+
+/**
+ * Finds the stream that yt-dlp's --embed-thumbnail added as cover art, and
+ * the date tag yt-dlp's --embed-metadata wrote (the video's upload_date).
+ * @returns {Promise<{ coverIndex: number|null, dateTag: string|undefined }>}
+ */
+async function probeVideo(videoFile) {
   try {
     const { stdout } = await execa(ffBin('ffprobe'), [
       '-v', 'error',
       '-select_streams', 'v',
-      '-show_entries', 'stream=index:stream_disposition=attached_pic',
+      '-show_entries', 'stream=index:stream_disposition=attached_pic:format_tags=date',
       '-of', 'json',
       videoFile,
     ]);
-    const streams = JSON.parse(stdout).streams || [];
-    return streams.find((s) => s.disposition?.attached_pic === 1)?.index ?? null;
+    const { streams = [], format } = JSON.parse(stdout);
+    return {
+      coverIndex: streams.find((s) => s.disposition?.attached_pic === 1)?.index ?? null,
+      dateTag: format?.tags?.date,
+    };
   } catch (err) {
     console.warn(`[audio] ffprobe failed: ${err.message}`);
-    return null;
+    return { coverIndex: null, dateTag: undefined };
   }
 }
 
